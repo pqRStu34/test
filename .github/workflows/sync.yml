@@ -1,0 +1,52 @@
+name: Telegram to Internet Archive Sync
+
+on:
+  schedule:
+    # Run automatically every 3 hours (adjust schedule as needed)
+    - cron: '0 */3 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Telegram to IA Sync Worker
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_STRING_SESSION: ${{ secrets.TELEGRAM_STRING_SESSION }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          IA_ACCESS_KEY: ${{ secrets.IA_ACCESS_KEY }}
+          IA_SECRET_KEY: ${{ secrets.IA_SECRET_KEY }}
+          IA_ITEM_IDENTIFIER: ${{ secrets.IA_ITEM_IDENTIFIER }}
+          COMPLETED_TXT_PATH: "completed_messages.txt"
+          RUN_ONCE: "true"
+        run: |
+          python telegram_ia_sync.py --once
+
+      - name: Commit and Push completed_messages.txt
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add completed_messages.txt
+          git diff --quiet && git diff --staged --quiet || (git commit -m "auto: update completed_messages.txt [skip ci]" && git push)
