@@ -37,6 +37,7 @@
     code.copyable-code {
       cursor: pointer;
       transition: background 0.15s, color 0.15s;
+      user-select: none;
     }
     code.copyable-code:hover {
       background-color: #38bdf8 !important;
@@ -58,7 +59,6 @@
       vertical-align: middle;
       margin-right: 6px;
     }
-    /* Normal Sized Modal Dialogs */
     .modal-card {
       width: 800px !important;
       max-width: 95vw !important;
@@ -223,10 +223,23 @@ console.log(file.download_url, file.format, file.size);</code></pre>
     topWrapper.onscroll = () => { bottomWrapper.scrollLeft = topWrapper.scrollLeft; };
     bottomWrapper.onscroll = () => { topWrapper.scrollLeft = bottomWrapper.scrollLeft; };
 
-    function copyToClipboard(text, label) {
+    // Instant in-cell copy feedback (replaces popup modal)
+    function quickCopy(el, text) {
       if (!text || text === "N/A") return;
       navigator.clipboard.writeText(text).then(() => {
-        showModal("📋 Copied to Clipboard", `<p class="has-text-success is-size-5 has-text-weight-semibold">Copied ${label}: <code>${text}</code></p>`, true);
+        const originalText = el.textContent;
+        el.textContent = "✓ Copied!";
+        const prevBg = el.style.backgroundColor;
+        const prevColor = el.style.color;
+        
+        el.style.backgroundColor = "#22c55e";
+        el.style.color = "#ffffff";
+
+        setTimeout(() => {
+          el.textContent = originalText;
+          el.style.backgroundColor = prevBg;
+          el.style.color = prevColor;
+        }, 300);
       }).catch(err => {
         console.error("Copy failed", err);
       });
@@ -406,9 +419,9 @@ console.log(file.download_url, file.format, file.size);</code></pre>
             <td>${f.length || "N/A"}</td>
             <td>${resStr}</td>
             <td>${f.mtime || "N/A"}</td>
-            <td><code class="copyable-code" onclick="copyToClipboard('${md5Str}', 'MD5')" title="Click to copy MD5">${md5Str}</code></td>
-            <td><code class="copyable-code has-text-weight-bold has-text-warning" onclick="copyToClipboard('${crc32Str}', 'CRC32 ID')" title="Click to copy CRC32 ID">${crc32Str}</code></td>
-            <td><code class="copyable-code" onclick="copyToClipboard('${sha1Str}', 'SHA1')" title="Click to copy SHA1">${sha1Str}</code></td>
+            <td><code class="copyable-code" onclick="quickCopy(this, '${md5Str}')" title="Click to quick copy MD5">${md5Str}</code></td>
+            <td><code class="copyable-code has-text-weight-bold has-text-warning" onclick="quickCopy(this, '${crc32Str}')" title="Click to quick copy CRC32 ID">${crc32Str}</code></td>
+            <td><code class="copyable-code" onclick="quickCopy(this, '${sha1Str}')" title="Click to quick copy SHA1">${sha1Str}</code></td>
             <td><a href="${downloadUrl}" target="_blank" class="button is-small is-link is-outlined py-0 px-2">GET File</a></td>
           </tr>
         `;
