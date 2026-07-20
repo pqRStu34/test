@@ -1,0 +1,17 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary downloads folder
+downloads/
+
+# Local session & credentials files
+*.session
+*.session-journal
+.env
+run_output.log
+
+# OS generated files
+.DS_Store
+Thumbs.db

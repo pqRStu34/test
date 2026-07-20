@@ -2,12 +2,17 @@ name: Telegram to Internet Archive Sync
 
 on:
   schedule:
-    # Run automatically every 3 hours (adjust schedule as needed)
     - cron: '0 */3 * * *'
-  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+  workflow_dispatch: # Manual trigger from GitHub Actions tab
+
+# Prevent parallel runs: if a job is running, new triggers wait in queue until it finishes
+concurrency:
+  group: telegram-ia-sync
+  cancel-in-progress: false
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   sync:
@@ -30,7 +35,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Telegram to IA Sync Worker
+      - name: Run Single Video Workload
+        id: sync_step
         env:
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
@@ -40,13 +46,27 @@ jobs:
           IA_SECRET_KEY: ${{ secrets.IA_SECRET_KEY }}
           IA_ITEM_IDENTIFIER: ${{ secrets.IA_ITEM_IDENTIFIER }}
           COMPLETED_TXT_PATH: "completed_messages.txt"
-          RUN_ONCE: "true"
+          SINGLE_VIDEO: "true"
         run: |
-          python telegram_ia_sync.py --once
+          python telegram_ia_sync.py --single-video | tee run_output.log
+          if grep -q "RESULT_HAS_MORE_VIDEOS=true" run_output.log; then
+            echo "has_more=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_more=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Commit and Push completed_messages.txt
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add completed_messages.txt
-          git diff --quiet && git diff --staged --quiet || (git commit -m "auto: update completed_messages.txt [skip ci]" && git push)
+          git diff --quiet && git diff --staged --quiet || (git commit -m "auto: completed 1 video workload [skip ci]" && git push)
+
+      - name: Auto-Trigger Next Video Workload (After 60 Seconds)
+        if: steps.sync_step.outputs.has_more == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Video workload finished and saved to git. Waiting 60 seconds before dispatching next video..."
+          sleep 60
+          gh workflow run sync.yml
