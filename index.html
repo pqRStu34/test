@@ -34,6 +34,14 @@
       white-space: nowrap;
     }
     code { font-size: 0.72rem; }
+    code.copyable-code {
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    code.copyable-code:hover {
+      background-color: #38bdf8 !important;
+      color: #0f172a !important;
+    }
     .source-tag {
       background-color: #363636 !important;
       color: #ffffff !important;
@@ -72,10 +80,13 @@
             </a>
           </p>
           <p class="control">
-            <button id="btnFetchAll" class="button is-link is-small is-active-glow" onclick="fetchMetadata()">Fetch All Files (All Details)</button>
+            <button id="btnFetchAll" class="button is-link is-small is-active-glow" onclick="fetchMetadata()">Fetch All Files</button>
           </p>
           <p class="control">
-            <button id="btnFetchVideos" class="button is-primary is-small" onclick="fetchVideosOnly()">Fetch Videos Only (.mp4 / .mkv)</button>
+            <button id="btnFetchVideos" class="button is-primary is-small" onclick="fetchVideosOnly()">Fetch Videos Only</button>
+          </p>
+          <p class="control">
+            <button id="btnFetchImages" class="button is-success is-small" onclick="fetchImagesOnly()">Fetch Images Only</button>
           </p>
           <p class="control">
             <button class="button is-warning is-small" onclick="openHowToModal()">📖 How To & SDK Guide</button>
@@ -160,7 +171,7 @@
       <section class="modal-card-body p-5">
         <div class="content is-normal">
           <h4 class="title is-5 mb-3">🚀 Universal 1-Line SDK Embed</h4>
-          <p class="mb-2">Include <code>sdk.js</code> in the <code>&lt;head&gt;</code> of any website:</p>
+          <p class="mb-2">Include <code>sdk.js</code> in the <code>&lt;head&gt;</code> of any website (Zero inline CSS added, fully customizable):</p>
           <pre style="font-size: 0.9rem;"><code>&lt;script src="https://pqrstu34.github.io/test/sdk.js"&gt;&lt;/script&gt;</code></pre>
 
           <hr class="my-4">
@@ -212,6 +223,15 @@ console.log(file.download_url, file.format, file.size);</code></pre>
     topWrapper.onscroll = () => { bottomWrapper.scrollLeft = topWrapper.scrollLeft; };
     bottomWrapper.onscroll = () => { topWrapper.scrollLeft = bottomWrapper.scrollLeft; };
 
+    function copyToClipboard(text, label) {
+      if (!text || text === "N/A") return;
+      navigator.clipboard.writeText(text).then(() => {
+        showModal("📋 Copied to Clipboard", `<p class="has-text-success is-size-5 has-text-weight-semibold">Copied ${label}: <code>${text}</code></p>`, true);
+      }).catch(err => {
+        console.error("Copy failed", err);
+      });
+    }
+
     function showModal(title, message, isSuccess = true) {
       document.getElementById("modalTitle").textContent = title;
       document.getElementById("modalBody").innerHTML = `<div class="content is-normal">${message}</div>`;
@@ -237,6 +257,7 @@ console.log(file.download_url, file.format, file.size);</code></pre>
     function setActiveButton(activeId) {
       document.getElementById("btnFetchAll").classList.remove("is-active-glow");
       document.getElementById("btnFetchVideos").classList.remove("is-active-glow");
+      document.getElementById("btnFetchImages").classList.remove("is-active-glow");
       document.getElementById(activeId).classList.add("is-active-glow");
     }
 
@@ -332,8 +353,20 @@ console.log(file.download_url, file.format, file.size);</code></pre>
       setActiveButton("btnFetchVideos");
       if (!rawFiles.length) await loadData();
       activeSet = rawFiles.filter(f => {
+        const format = (f.format || "").toLowerCase();
         const name = (f.name || "").toLowerCase();
-        return f.source === "original" && (name.endsWith(".mp4") || name.endsWith(".mkv"));
+        return f.source === "original" && (format.includes("mpeg") || format.includes("matroska") || name.endsWith(".mp4") || name.endsWith(".mkv"));
+      });
+      filterResults();
+    }
+
+    async function fetchImagesOnly() {
+      setActiveButton("btnFetchImages");
+      if (!rawFiles.length) await loadData();
+      activeSet = rawFiles.filter(f => {
+        const format = (f.format || "").toLowerCase();
+        const name = (f.name || "").toLowerCase();
+        return format.includes("image") || format.includes("jpeg") || format.includes("png") || name.endsWith(".jpg") || name.endsWith(".png");
       });
       filterResults();
     }
@@ -360,6 +393,8 @@ console.log(file.download_url, file.format, file.size);</code></pre>
         const resStr = (f.width && f.height) ? `${f.width}x${f.height}` : "N/A";
         const sourceStr = f.source || "N/A";
         const crc32Str = f.crc32 || "N/A";
+        const md5Str = f.md5 || "N/A";
+        const sha1Str = f.sha1 || "N/A";
         
         return `
           <tr>
@@ -371,9 +406,9 @@ console.log(file.download_url, file.format, file.size);</code></pre>
             <td>${f.length || "N/A"}</td>
             <td>${resStr}</td>
             <td>${f.mtime || "N/A"}</td>
-            <td><code>${f.md5 || "N/A"}</code></td>
-            <td><code class="has-text-weight-bold has-text-warning" title="CRC32 Checksum ID">${crc32Str}</code></td>
-            <td><code>${f.sha1 || "N/A"}</code></td>
+            <td><code class="copyable-code" onclick="copyToClipboard('${md5Str}', 'MD5')" title="Click to copy MD5">${md5Str}</code></td>
+            <td><code class="copyable-code has-text-weight-bold has-text-warning" onclick="copyToClipboard('${crc32Str}', 'CRC32 ID')" title="Click to copy CRC32 ID">${crc32Str}</code></td>
+            <td><code class="copyable-code" onclick="copyToClipboard('${sha1Str}', 'SHA1')" title="Click to copy SHA1">${sha1Str}</code></td>
             <td><a href="${downloadUrl}" target="_blank" class="button is-small is-link is-outlined py-0 px-2">GET File</a></td>
           </tr>
         `;

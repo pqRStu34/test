@@ -2,6 +2,8 @@
  * Internet Archive Router SDK (sdk.js)
  * Allows any website to embed files dynamically using `ia-id="<CRC32_OR_SHA1>"`
  * 
+ * Zero inline styles injected—100% customizable via external CSS.
+ * 
  * Usage in HTML:
  *   <script src="https://pqrstu34.github.io/test/sdk.js"></script>
  *   <div ia-id="dd4ef44a"></div>
@@ -60,7 +62,6 @@
   }
 
   function processDomElements() {
-    // Select elements with ia-id or data-ia-id
     const elements = document.querySelectorAll("[ia-id], [data-ia-id], [data-crc32], [data-sha1]");
 
     elements.forEach((el) => {
@@ -79,18 +80,18 @@
       const isVideo = format.includes("mpeg") || format.includes("matroska") || name.endsWith(".mp4") || name.endsWith(".mkv");
       const isImage = format.includes("image") || format.includes("jpeg") || format.includes("png") || name.endsWith(".jpg") || name.endsWith(".png");
 
-      // Auto-handle element based on IA format
+      // Auto-handle element based on IA format with ZERO inline styles
       if (tagName === "a") {
         el.setAttribute("href", file.download_url);
         if (!el.textContent.trim()) el.textContent = file.name;
       } else if (tagName === "video" || tagName === "audio" || tagName === "img" || tagName === "iframe" || tagName === "source") {
         el.setAttribute("src", file.download_url);
       } else {
-        // Generic elements (div, span, etc.): render appropriate HTML media based on Internet Archive file format!
+        // Generic container elements (div, span, etc.) without inline styles
         if (isVideo) {
-          el.innerHTML = `<video src="${file.download_url}" controls style="max-width:100%; border-radius:8px;"></video>`;
+          el.innerHTML = `<video src="${file.download_url}" controls></video>`;
         } else if (isImage) {
-          el.innerHTML = `<img src="${file.download_url}" alt="${file.name}" style="max-width:100%; border-radius:8px;">`;
+          el.innerHTML = `<img src="${file.download_url}" alt="${file.name}">`;
         } else {
           el.innerHTML = `<a href="${file.download_url}" target="_blank">${file.name}</a>`;
         }
