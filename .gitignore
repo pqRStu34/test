@@ -9,6 +9,7 @@ downloads/
 # Local session & credentials files
 *.session
 *.session-journal
+session_string.txt
 .env
 run_output.log
 
