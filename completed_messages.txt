@@ -32,3 +32,4 @@
 97 | Canaan-E1-1080p.mp4
 98 | Canaan-E10-1080p.mp4
 99 | Canaan-E11-1080p.mp4
+100 | Canaan-E12-1080p.mp4
