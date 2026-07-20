@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Third-Party Website Embedding Demo</title>
+  
+  <!-- 1. Include your SDK script in the <head> of any website -->
+  <script src="sdk.js"></script>
+
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #111; color: white; }
+    .box { background: #222; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+    video { max-width: 100%; width: 640px; border-radius: 8px; }
+    a { color: #38bdf8; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+  <h1>Third-Party Website Embedding Demo</h1>
+  <p>Notice how there are <strong>NO long URLs</strong> written below—only simple 8-character CRC32 IDs (e.g. <code>data-ia-id="dd4ef44a"</code>)!</p>
+
+  <div class="box">
+    <h2>Example 1: HTML Video Player embedded via CRC32 ID</h2>
+    <!-- Simply specify data-ia-id="dd4ef44a" (Gargantia Episode 1) -->
+    <video data-ia-id="dd4ef44a" controls></video>
+  </div>
+
+  <div class="box">
+    <h2>Example 2: Download Link embedded via CRC32 ID</h2>
+    <!-- Simply specify data-ia-id="b2e414f6" (Gargantia Episode 2) -->
+    <p>Click to download: <a data-ia-id="b2e414f6">Download Episode 2 MP4</a></p>
+  </div>
+
+  <div class="box">
+    <h2>Example 3: Episode 3 Video embedded via SHA1 Hash</h2>
+    <!-- Can also use SHA1 hash -->
+    <video data-ia-id="b85f5fd69898ec922a38b92ff2257eec057d019a" controls></video>
+  </div>
+
+</body>
+</html>

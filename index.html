@@ -3,252 +3,416 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Corrupted Files - Internet Archive Database Visualizer</title>
-  
-  <!-- DataTables & Google Fonts -->
-  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
-  
+  <title>Internet Archive API Router</title>
+  <!-- URL Favicon loaded from icon.svg -->
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css">
   <style>
-    * { box-sizing: border-box; }
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      background-color: #0f172a;
-      color: #f8fafc;
-      margin: 0;
-      padding: 24px;
+    html, body {
+      min-height: 100%;
+      overflow-y: auto;
+      font-size: 0.75rem;
     }
-    .header {
-      text-align: center;
-      margin-bottom: 24px;
+    .top-scroll-wrapper {
+      width: 100%;
+      overflow-x: auto;
+      overflow-y: hidden;
+      height: 12px;
+      margin-bottom: 4px;
     }
-    .header h1 {
-      color: #38bdf8;
-      font-size: 2.2rem;
-      margin: 0 0 8px 0;
+    .top-scroll-content {
+      height: 1px;
     }
-    .header p {
-      color: #94a3b8;
-      margin: 0;
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+      overflow-y: visible;
     }
-    .card {
-      max-width: 1300px;
-      margin: 0 auto;
-      background-color: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 12px;
-      padding: 24px;
-      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    .table th, .table td {
+      padding: 0.35em 0.5em;
+      font-size: 0.72rem;
+      white-space: nowrap;
     }
-    table.dataTable {
-      width: 100% !important;
-      border-collapse: collapse !important;
-      color: #f8fafc;
-    }
-    table.dataTable thead th {
-      background-color: #0f172a;
-      color: #38bdf8;
-      border-bottom: 2px solid #334155 !important;
-      padding: 12px 16px;
+    code { font-size: 0.72rem; }
+    .source-tag {
+      background-color: #363636 !important;
+      color: #ffffff !important;
       font-weight: 600;
     }
-    table.dataTable tbody tr {
-      background-color: #1e293b !important;
-      border-bottom: 1px solid #334155;
+    .button.is-active-glow {
+      box-shadow: 0 0 12px 3px rgba(56, 189, 248, 0.75) !important;
+      border-color: #38bdf8 !important;
+      font-weight: 700 !important;
     }
-    table.dataTable tbody tr:hover {
-      background-color: #334155 !important;
-    }
-    table.dataTable tbody td {
-      padding: 12px 16px;
+    .brand-icon {
+      width: 18px;
+      height: 18px;
       vertical-align: middle;
-    }
-    .badge-format {
-      background-color: #3b82f6;
-      color: white;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      display: inline-block;
-    }
-    .badge-resolution {
-      background-color: #8b5cf6;
-      color: white;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      display: inline-block;
-      margin-left: 4px;
-    }
-    .btn-action {
-      background-color: #0284c7;
-      color: white;
-      padding: 6px 14px;
-      border-radius: 6px;
-      text-decoration: none;
-      font-size: 0.85rem;
-      font-weight: 600;
-      transition: background 0.2s;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .btn-action:hover {
-      background-color: #0369a1;
-    }
-    code {
-      font-family: monospace;
-      background-color: #0f172a;
-      padding: 3px 6px;
-      border-radius: 4px;
-      color: #cbd5e1;
-      font-size: 0.85rem;
-    }
-    .dataTables_wrapper .dataTables_length,
-    .dataTables_wrapper .dataTables_filter,
-    .dataTables_wrapper .dataTables_info,
-    .dataTables_wrapper .dataTables_processing,
-    .dataTables_wrapper .dataTables_paginate {
-      color: #94a3b8 !important;
-      margin-bottom: 12px;
-    }
-    .dataTables_wrapper .dataTables_filter input {
-      background-color: #0f172a;
-      border: 1px solid #334155;
-      color: white;
-      padding: 6px 12px;
-      border-radius: 6px;
-      outline: none;
-    }
-    .dataTables_wrapper .dataTables_paginate .paginate_button {
-      color: #f8fafc !important;
-      border-radius: 4px !important;
-    }
-    .dataTables_wrapper .dataTables_paginate .paginate_button.current {
-      background: #0284c7 !important;
-      border-color: #0284c7 !important;
-      color: white !important;
+      margin-right: 6px;
     }
   </style>
 </head>
 <body>
 
-  <div class="header">
-    <h1>🎬 Corrupted Files Archive Database</h1>
-    <p>Live XML Database Visualizer linked to Internet Archive item: <code>corrupted_files</code></p>
+  <section class="section p-3">
+    <div class="container is-fluid">
+      
+      <!-- Single Control Bar -->
+      <div class="box p-3 mb-3">
+        <div class="field is-grouped is-grouped-multiline mb-0 align-items-center">
+          <p class="control">
+            <span class="tag is-info is-medium">
+              <img src="icon.svg" class="brand-icon" alt="icon">
+              IA API Router
+            </span>
+          </p>
+          <p class="control">
+            <button id="btnFetchAll" class="button is-link is-small is-active-glow" onclick="fetchMetadata()">Fetch All Files (All Details)</button>
+          </p>
+          <p class="control">
+            <button id="btnFetchVideos" class="button is-primary is-small" onclick="fetchVideosOnly()">Fetch Videos Only (.mp4 / .mkv)</button>
+          </p>
+          <p class="control">
+            <button class="button is-warning is-small" onclick="openHowToModal()">📖 How To & SDK Guide</button>
+          </p>
+          <p class="control is-expanded">
+            <input id="searchInput" class="input is-small" type="text" placeholder="Search (e.g. hEllSparadIse, ep10, sha1, format...)" oninput="filterResults()">
+          </p>
+          <p class="control">
+            <a href="https://archive.org/metadata/corrupted_files" target="_blank" class="button is-light is-small">Raw IA JSON API</a>
+          </p>
+          <p class="control">
+            <a href="https://ia902801.us.archive.org/26/items/corrupted_files/corrupted_files_files.xml" target="_blank" class="button is-light is-small">Raw IA XML</a>
+          </p>
+        </div>
+      </div>
+
+      <!-- Synchronized Top Scrollbar -->
+      <div class="top-scroll-wrapper" id="topScrollWrapper">
+        <div class="top-scroll-content" id="topScrollContent"></div>
+      </div>
+
+      <!-- Main Data Table Container -->
+      <div class="table-container" id="bottomScrollWrapper">
+        <table class="table is-fullwidth is-striped is-hoverable is-bordered is-narrow" id="apiTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>File Name</th>
+              <th>Source</th>
+              <th>Format</th>
+              <th>Size (Bytes)</th>
+              <th>Duration (Sec)</th>
+              <th>Resolution</th>
+              <th>mtime (Timestamp)</th>
+              <th>MD5 Checksum</th>
+              <th>CRC32 Checksum</th>
+              <th>Full SHA1 Checksum</th>
+              <th>Direct Download Link</th>
+            </tr>
+          </thead>
+          <tbody id="apiTableBody">
+            <tr>
+              <td colspan="12" class="has-text-centered has-text-grey py-4">Click a fetch button above to load data.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Infinite Scroll Loading Indicator -->
+      <div id="infiniteLoader" class="has-text-centered py-3 has-text-grey">
+        <span id="scrollInfo">Loaded 0 items</span>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Bulma Pop-up Modal Notification (Ad Popup Style) -->
+  <div class="modal" id="popupModal">
+    <div class="modal-background" onclick="closeModal()"></div>
+    <div class="modal-card">
+      <header class="modal-card-head py-3">
+        <p class="modal-card-title is-size-6" id="modalTitle">API Notification</p>
+        <button class="delete" aria-label="close" onclick="closeModal()"></button>
+      </header>
+      <section class="modal-card-body" id="modalBody">
+        Loading...
+      </section>
+      <footer class="modal-card-foot py-2 is-justify-content-flex-end">
+        <button class="button is-success is-small" onclick="closeModal()">OK / Close</button>
+      </footer>
+    </div>
   </div>
 
-  <div class="card">
-    <table id="xmlDbTable" class="display">
-      <thead>
-        <tr>
-          <th>File Name</th>
-          <th>Format & Quality</th>
-          <th>Duration</th>
-          <th>Size</th>
-          <th>SHA1 Checksum</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </div>
+  <!-- How To & SDK Guide Modal -->
+  <div class="modal" id="howToModal">
+    <div class="modal-background" onclick="closeHowToModal()"></div>
+    <div class="modal-card" style="width: 750px; max-width: 95vw;">
+      <header class="modal-card-head py-3">
+        <p class="modal-card-title is-size-6">📖 Universal SDK & API Embedding Guide</p>
+        <button class="delete" aria-label="close" onclick="closeHowToModal()"></button>
+      </header>
+      <section class="modal-card-body">
+        <div class="content">
+          <h4 class="title is-6 mb-2">🚀 Universal 1-Line SDK Embed</h4>
+          <p class="mb-2">Include <code>sdk.js</code> in the <code>&lt;head&gt;</code> of any website:</p>
+          <pre><code>&lt;script src="https://pqrstu34.github.io/test/sdk.js"&gt;&lt;/script&gt;</code></pre>
 
-  <!-- Scripts -->
-  <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-  <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+          <hr class="my-3">
+
+          <h4 class="title is-6 mb-2">💡 Embed Any File Using Universal <code>ia-id="<ID>"</code></h4>
+          <p class="is-size-7 mb-2">Internet Archive automatically detects the file format. Simply use <code>ia-id="<ID>"</code> on any element:</p>
+
+          <h5 class="subtitle is-7 mb-1 font-weight-bold">1. Embed File / Media via ID:</h5>
+          <pre><code>&lt;div ia-id="dd4ef44a"&gt;&lt;/div&gt;</code></pre>
+
+          <h5 class="subtitle is-7 mb-1 mt-3 font-weight-bold">2. Embed Download Link via ID:</h5>
+          <pre><code>&lt;a ia-id="b2e414f6"&gt;Download File&lt;/a&gt;</code></pre>
+
+          <h5 class="subtitle is-7 mb-1 mt-3 font-weight-bold">3. Direct URL Parameter API Query:</h5>
+          <pre><code>https://pqrstu34.github.io/test/?crc32=dd4ef44a</code></pre>
+
+          <h5 class="subtitle is-7 mb-1 mt-3 font-weight-bold">4. JavaScript Helper Functions:</h5>
+          <pre><code>const file = getFileByCrc32('dd4ef44a');
+console.log(file.download_url, file.format, file.size);</code></pre>
+        </div>
+      </section>
+      <footer class="modal-card-foot py-2 is-justify-content-flex-end">
+        <button class="button is-info is-small" onclick="closeHowToModal()">Close Guide</button>
+      </footer>
+    </div>
+  </div>
 
   <script>
-    const XML_URL = "https://ia902801.us.archive.org/26/items/corrupted_files/corrupted_files_files.xml";
-    const BASE_DOWNLOAD_URL = "https://archive.org/download/corrupted_files/";
+    const ITEM_ID = "corrupted_files";
+    const API_URL = `https://archive.org/metadata/${ITEM_ID}`;
+    const BASE_DOWNLOAD = `https://archive.org/download/${ITEM_ID}/`;
+    
+    let rawFiles = [];
+    let activeSet = [];
+    let currentFiltered = [];
+    let renderedCount = 0;
+    const CHUNK_SIZE = 40;
 
-    function formatDuration(secondsStr) {
-      if (!secondsStr) return "N/A";
-      const totalSec = Math.floor(parseFloat(secondsStr));
-      const mins = Math.floor(totalSec / 60);
-      const secs = totalSec % 60;
-      return `${mins}m ${secs}s`;
+    // Scrollbar Syncing
+    const topWrapper = document.getElementById('topScrollWrapper');
+    const bottomWrapper = document.getElementById('bottomScrollWrapper');
+    const topContent = document.getElementById('topScrollContent');
+    const apiTable = document.getElementById('apiTable');
+
+    function syncScrollbars() {
+      topContent.style.width = apiTable.scrollWidth + 'px';
     }
 
-    function formatBytes(bytes) {
-      if (!bytes || bytes === 0) return '0 Bytes';
-      const k = 1024;
-      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-      const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    topWrapper.onscroll = () => { bottomWrapper.scrollLeft = topWrapper.scrollLeft; };
+    bottomWrapper.onscroll = () => { topWrapper.scrollLeft = bottomWrapper.scrollLeft; };
+
+    function showModal(title, message, isSuccess = true) {
+      document.getElementById("modalTitle").textContent = title;
+      document.getElementById("modalBody").innerHTML = `<div class="content">${message}</div>`;
+      document.getElementById("popupModal").classList.add("is-active");
     }
 
-    async function initDatabase() {
+    function closeModal() {
+      document.getElementById("popupModal").classList.remove("is-active");
+    }
+
+    function openHowToModal() {
+      document.getElementById("howToModal").classList.add("is-active");
+    }
+
+    function closeHowToModal() {
+      document.getElementById("howToModal").classList.remove("is-active");
+    }
+
+    function normalize(str) {
+      return (str || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    }
+
+    function setActiveButton(activeId) {
+      document.getElementById("btnFetchAll").classList.remove("is-active-glow");
+      document.getElementById("btnFetchVideos").classList.remove("is-active-glow");
+      document.getElementById(activeId).classList.add("is-active-glow");
+    }
+
+    function getFileByCrc32(crc32Id) {
+      const target = normalize(crc32Id);
+      const file = rawFiles.find(f => normalize(f.crc32) === target);
+      if (file) {
+        return {
+          ...file,
+          download_url: BASE_DOWNLOAD + encodeURIComponent(file.name)
+        };
+      }
+      return null;
+    }
+
+    function getFileBySha1(sha1Hash) {
+      const target = normalize(sha1Hash);
+      const file = rawFiles.find(f => normalize(f.sha1) === target);
+      if (file) {
+        return {
+          ...file,
+          download_url: BASE_DOWNLOAD + encodeURIComponent(file.name)
+        };
+      }
+      return null;
+    }
+
+    function getFileByName(filename) {
+      const target = normalize(filename);
+      const file = rawFiles.find(f => normalize(f.name) === target);
+      if (file) {
+        return {
+          ...file,
+          download_url: BASE_DOWNLOAD + encodeURIComponent(file.name)
+        };
+      }
+      return null;
+    }
+
+    async function loadData() {
+      showModal("⏳ Fetching API Data", "<p class='has-text-info has-text-weight-semibold'>Downloading metadata from Internet Archive...</p>", true);
+
       try {
-        const response = await fetch(XML_URL);
-        const xmlText = await response.text();
-
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlText, "text/xml");
-        const fileElements = xmlDoc.getElementsByTagName("file");
-
-        const rows = [];
-
-        for (let file of fileElements) {
-          const fileName = file.getAttribute("name");
-          const source = file.getAttribute("source");
-
-          // Only display original media files (exclude auto-generated thumbnails)
-          if (source !== "original" && !fileName.endsWith(".mp4") && !fileName.endsWith(".mkv")) {
-            continue;
-          }
-
-          const format = file.getElementsByTagName("format")[0]?.textContent || "Media";
-          const width = file.getElementsByTagName("width")[0]?.textContent;
-          const height = file.getElementsByTagName("height")[0]?.textContent;
-          const resolution = (width && height) ? `${width}x${height}` : "";
-
-          const length = file.getElementsByTagName("length")[0]?.textContent;
-          const sizeBytes = parseInt(file.getElementsByTagName("size")[0]?.textContent || "0");
-          const sha1 = file.getElementsByTagName("sha1")[0]?.textContent || "N/A";
-
-          const directUrl = BASE_DOWNLOAD_URL + encodeURIComponent(fileName);
-
-          const formatHtml = `<span class="badge-format">${format}</span>` + 
-                             (resolution ? `<span class="badge-resolution">${resolution}</span>` : "");
-
-          const actionHtml = `<a href="${directUrl}" target="_blank" class="btn-action">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                                Stream / Download
-                              </a>`;
-
-          rows.push([
-            `<strong>${fileName}</strong>`,
-            formatHtml,
-            formatDuration(length),
-            formatBytes(sizeBytes),
-            `<code>${sha1.substring(0, 12)}...</code>`,
-            actionHtml
-          ]);
-        }
-
-        $('#xmlDbTable').DataTable({
-          data: rows,
-          columns: [
-            { title: "File Name" },
-            { title: "Format & Quality" },
-            { title: "Duration" },
-            { title: "Size" },
-            { title: "SHA1 Checksum" },
-            { title: "Action", orderable: false }
-          ],
-          pageLength: 25,
-          order: [[0, 'asc']]
-        });
-
+        const res = await fetch(API_URL);
+        const data = await res.json();
+        rawFiles = data.files || [];
+        showModal("🎉 Data Successfully Loaded", `<p class='has-text-success has-text-weight-semibold'>Loaded all properties for <strong>${rawFiles.length} files</strong> from Internet Archive API.</p>`, true);
+        
+        checkUrlQueryParameters();
+        return rawFiles;
       } catch (err) {
-        console.error("Failed to load XML database:", err);
+        showModal("⚠️ Fetch Error", "<p class='has-text-danger has-text-weight-semibold'>Failed to fetch data: " + err.message + "</p>", false);
+        return [];
       }
     }
 
-    initDatabase();
+    function checkUrlQueryParameters() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const crc32Query = urlParams.get('crc32') || urlParams.get('id');
+      const sha1Query = urlParams.get('sha1');
+
+      if (crc32Query) {
+        const result = getFileByCrc32(crc32Query);
+        if (result) {
+          document.getElementById("searchInput").value = crc32Query;
+          filterResults();
+          showModal(`🔍 API Query: CRC32 ID '${crc32Query}'`, `
+            <pre><code>${JSON.stringify(result, null, 2)}</code></pre>
+            <p><a href="${result.download_url}" target="_blank" class="button is-link is-small">GET File Stream</a></p>
+          `);
+        }
+      } else if (sha1Query) {
+        const result = getFileBySha1(sha1Query);
+        if (result) {
+          document.getElementById("searchInput").value = sha1Query;
+          filterResults();
+          showModal(`🔍 API Query: SHA1 '${sha1Query}'`, `
+            <pre><code>${JSON.stringify(result, null, 2)}</code></pre>
+            <p><a href="${result.download_url}" target="_blank" class="button is-link is-small">GET File Stream</a></p>
+          `);
+        }
+      }
+    }
+
+    async function fetchMetadata() {
+      setActiveButton("btnFetchAll");
+      if (!rawFiles.length) await loadData();
+      activeSet = rawFiles;
+      filterResults();
+    }
+
+    async function fetchVideosOnly() {
+      setActiveButton("btnFetchVideos");
+      if (!rawFiles.length) await loadData();
+      activeSet = rawFiles.filter(f => {
+        const name = (f.name || "").toLowerCase();
+        return f.source === "original" && (name.endsWith(".mp4") || name.endsWith(".mkv"));
+      });
+      filterResults();
+    }
+
+    function resetAndRender() {
+      renderedCount = 0;
+      document.getElementById("apiTableBody").innerHTML = "";
+      loadMoreRows();
+    }
+
+    function loadMoreRows() {
+      if (renderedCount >= currentFiltered.length) {
+        document.getElementById("scrollInfo").textContent = `End of results (${currentFiltered.length} items total)`;
+        return;
+      }
+
+      const tbody = document.getElementById("apiTableBody");
+      const nextBatch = currentFiltered.slice(renderedCount, renderedCount + CHUNK_SIZE);
+      
+      const rowsHtml = nextBatch.map((f, i) => {
+        const itemNum = renderedCount + i + 1;
+        const name = f.name || "";
+        const downloadUrl = BASE_DOWNLOAD + encodeURIComponent(name);
+        const resStr = (f.width && f.height) ? `${f.width}x${f.height}` : "N/A";
+        const sourceStr = f.source || "N/A";
+        const crc32Str = f.crc32 || "N/A";
+        
+        return `
+          <tr>
+            <th>${itemNum}</th>
+            <td><code>${name}</code></td>
+            <td><span class="tag source-tag">${sourceStr}</span></td>
+            <td><span class="tag is-info is-light">${f.format || "N/A"}</span></td>
+            <td>${f.size || 0}</td>
+            <td>${f.length || "N/A"}</td>
+            <td>${resStr}</td>
+            <td>${f.mtime || "N/A"}</td>
+            <td><code>${f.md5 || "N/A"}</code></td>
+            <td><code class="has-text-weight-bold has-text-warning" title="CRC32 Checksum ID">${crc32Str}</code></td>
+            <td><code>${f.sha1 || "N/A"}</code></td>
+            <td><a href="${downloadUrl}" target="_blank" class="button is-small is-link is-outlined py-0 px-2">GET File</a></td>
+          </tr>
+        `;
+      }).join("");
+
+      tbody.insertAdjacentHTML("beforeend", rowsHtml);
+      renderedCount += nextBatch.length;
+
+      document.getElementById("scrollInfo").textContent = `Showing ${renderedCount} of ${currentFiltered.length} items (Scroll down to load more)`;
+      setTimeout(syncScrollbars, 50);
+    }
+
+    function filterResults() {
+      const rawQuery = document.getElementById("searchInput").value;
+      const q = normalize(rawQuery);
+
+      if (!q) {
+        currentFiltered = activeSet;
+      } else {
+        currentFiltered = activeSet.filter(f => {
+          const normName = normalize(f.name);
+          const normSha1 = normalize(f.sha1);
+          const normMd5 = normalize(f.md5);
+          const normCrc32 = normalize(f.crc32);
+          const normFormat = normalize(f.format);
+          const normSource = normalize(f.source);
+          return normName.includes(q) || normSha1.includes(q) || normMd5.includes(q) || normCrc32.includes(q) || normFormat.includes(q) || normSource.includes(q);
+        });
+      }
+
+      resetAndRender();
+    }
+
+    // Infinite Scroll Event Listener
+    window.addEventListener('scroll', () => {
+      if ((window.innerHeight + window.scrollY) >= (document.body.offsetHeight - 500)) {
+        loadMoreRows();
+      }
+    });
+
+    window.addEventListener('resize', syncScrollbars);
+
+    // Default auto-load: Fetch ALL Files view by default!
+    fetchMetadata();
   </script>
 </body>
 </html>
