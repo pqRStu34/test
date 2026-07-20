@@ -32,16 +32,15 @@
       padding: 0.35em 0.5em;
       font-size: 0.72rem;
       white-space: nowrap;
+      transition: background 0.15s, color 0.15s;
     }
     code { font-size: 0.72rem; }
     code.copyable-code {
       cursor: pointer;
-      transition: background 0.15s, color 0.15s;
       user-select: none;
     }
     code.copyable-code:hover {
-      background-color: #38bdf8 !important;
-      color: #0f172a !important;
+      text-decoration: underline;
     }
     .source-tag {
       background-color: #363636 !important;
@@ -223,23 +222,29 @@ console.log(file.download_url, file.format, file.size);</code></pre>
     topWrapper.onscroll = () => { bottomWrapper.scrollLeft = topWrapper.scrollLeft; };
     bottomWrapper.onscroll = () => { topWrapper.scrollLeft = bottomWrapper.scrollLeft; };
 
-    // Instant in-cell copy feedback (replaces popup modal)
-    function quickCopy(el, text) {
+    // Full <td> cell quick copy feedback centered for 500 ms
+    function quickCopy(codeEl, text) {
       if (!text || text === "N/A") return;
+      const tdCell = codeEl.closest('td');
+      if (!tdCell) return;
+
       navigator.clipboard.writeText(text).then(() => {
-        const originalText = el.textContent;
-        el.textContent = "✓ Copied!";
-        const prevBg = el.style.backgroundColor;
-        const prevColor = el.style.color;
-        
-        el.style.backgroundColor = "#22c55e";
-        el.style.color = "#ffffff";
+        const originalHtml = tdCell.innerHTML;
+        const originalTextAlign = tdCell.style.textAlign;
+        const originalBg = tdCell.style.backgroundColor;
+        const originalColor = tdCell.style.color;
+
+        tdCell.innerHTML = "<strong>✓ Copied!</strong>";
+        tdCell.style.textAlign = "center";
+        tdCell.style.backgroundColor = "#22c55e";
+        tdCell.style.color = "#ffffff";
 
         setTimeout(() => {
-          el.textContent = originalText;
-          el.style.backgroundColor = prevBg;
-          el.style.color = prevColor;
-        }, 300);
+          tdCell.innerHTML = originalHtml;
+          tdCell.style.textAlign = originalTextAlign;
+          tdCell.style.backgroundColor = originalBg;
+          tdCell.style.color = originalColor;
+        }, 500);
       }).catch(err => {
         console.error("Copy failed", err);
       });
