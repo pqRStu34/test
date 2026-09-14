@@ -4,11 +4,15 @@ import time
 import logging
 import argparse
 from pathlib import Path
+from dotenv import load_dotenv
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.tl.types import MessageMediaDocument, DocumentAttributeFilename, DocumentAttributeVideo
 from telethon.errors import AuthKeyDuplicatedError
 import internetarchive as ia
+
+# Load environment variables from .env if present
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -21,8 +25,9 @@ logger = logging.getLogger("tg_ia_sync")
 # Environment Configurations
 TELEGRAM_API_ID = os.environ.get("TELEGRAM_API_ID", "")
 TELEGRAM_API_HASH = os.environ.get("TELEGRAM_API_HASH", "")
-TELEGRAM_STRING_SESSION = os.environ.get("TELEGRAM_STRING_SESSION", "")
-TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_STRING_SESSION = os.environ.get("TELEGRAM_STRING_SESSION", "").strip()
+TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_ID", "").strip()
 
 IA_ACCESS_KEY = os.environ.get("IA_ACCESS_KEY", "")
 IA_SECRET_KEY = os.environ.get("IA_SECRET_KEY", "")
@@ -39,7 +44,8 @@ def validate_environment():
     missing = []
     if not TELEGRAM_API_ID: missing.append("TELEGRAM_API_ID")
     if not TELEGRAM_API_HASH: missing.append("TELEGRAM_API_HASH")
-    if not TELEGRAM_STRING_SESSION: missing.append("TELEGRAM_STRING_SESSION")
+    if not TELEGRAM_BOT_TOKEN and not TELEGRAM_STRING_SESSION:
+        missing.append("TELEGRAM_BOT_TOKEN (or TELEGRAM_STRING_SESSION)")
     if not TELEGRAM_CHANNEL_ID: missing.append("TELEGRAM_CHANNEL_ID")
     if not IA_ACCESS_KEY: missing.append("IA_ACCESS_KEY")
     if not IA_SECRET_KEY: missing.append("IA_SECRET_KEY")
@@ -139,18 +145,44 @@ async def run_sync_loop(single_video=False, once=False):
         channel_id = TELEGRAM_CHANNEL_ID
 
     logger.info(f"Initializing Telegram Client for channel: {channel_id}")
-    client = TelegramClient(StringSession(TELEGRAM_STRING_SESSION), int(TELEGRAM_API_ID), TELEGRAM_API_HASH)
-    
-    try:
-        await client.start()
-    except AuthKeyDuplicatedError:
-        logger.critical("TELEGRAM_STRING_SESSION was used simultaneously by another location/run and has been revoked by Telegram!")
-        logger.critical("Please re-run `python generate_session.py` locally and update TELEGRAM_STRING_SESSION in GitHub Secrets.")
-        sys.exit(1)
+    # Using MTProto with TELEGRAM_API_ID & TELEGRAM_API_HASH grants native 2GB file limits (bypassing the 50MB HTTP Bot API limit)
+    if TELEGRAM_BOT_TOKEN:
+        logger.info("Authenticating with Telegram Bot Token (MTProto session, 2GB limit enabled)...")
+        client = TelegramClient(StringSession(), int(TELEGRAM_API_ID), TELEGRAM_API_HASH)
+        await client.start(bot_token=TELEGRAM_BOT_TOKEN)
+    else:
+        logger.info("Authenticating with User StringSession...")
+        client = TelegramClient(StringSession(TELEGRAM_STRING_SESSION), int(TELEGRAM_API_ID), TELEGRAM_API_HASH)
+        try:
+            await client.start()
+        except AuthKeyDuplicatedError:
+            logger.critical("TELEGRAM_STRING_SESSION was used simultaneously by another location/run and has been revoked by Telegram!")
+            logger.critical("Please re-run `python generate_session.py` locally and update TELEGRAM_STRING_SESSION in GitHub Secrets.")
+            sys.exit(1)
 
     logger.info("Connected to Telegram successfully.")
 
-    channel = await client.get_entity(channel_id)
+    try:
+        channel = await client.get_entity(channel_id)
+    except Exception as e:
+        if isinstance(channel_id, int) and channel_id > 0:
+            try:
+                channel = await client.get_entity(int(f"-100{channel_id}"))
+            except Exception:
+                logger.error(
+                    f"Failed to resolve channel '{channel_id}'. "
+                    f"If using a Bot session, ensure the bot is added as an Administrator in the channel! "
+                    f"Error: {e}"
+                )
+                raise
+        else:
+            logger.error(
+                f"Failed to resolve channel '{channel_id}'. "
+                f"If using a Bot session, ensure the bot is added as an Administrator in the channel! "
+                f"Error: {e}"
+            )
+            raise
+
     logger.info(f"Target Channel: {getattr(channel, 'title', channel_id)}")
 
     video_synced_in_this_run = False
@@ -233,9 +265,8 @@ def main():
     args = parser.parse_args()
 
     import asyncio
-    loop = asyncio.get_event_loop()
     try:
-        loop.run_until_complete(run_sync_loop(single_video=args.single_video, once=args.once))
+        asyncio.run(run_sync_loop(single_video=args.single_video, once=args.once))
     except KeyboardInterrupt:
         logger.info("Worker stopped by user.")
 
