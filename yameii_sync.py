@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 from datetime import datetime, timezone
 import urllib.request
+import urllib.parse
 import urllib.error
 from dotenv import load_dotenv
 from telethon import TelegramClient
@@ -39,7 +40,7 @@ DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", "yameii.db"))
 SQL_DUMP_PATH = Path(os.environ.get("SQL_DUMP_PATH", "yameii.sql"))
 DOWNLOAD_DIR = Path(os.environ.get("DOWNLOAD_DIR", "./downloads"))
 
-# 2 GB limit in bytes (2000 MB for safe MTProto bot limit)
+# 2 GB limit in bytes (2000 MB for MTProto bot limit)
 TWO_GB_BYTES = 2000 * 1024 * 1024
 SIZE_LIMIT_BYTES = int(os.environ.get("SIZE_LIMIT_BYTES", str(TWO_GB_BYTES)))
 MIN_SEEDERS = int(os.environ.get("MIN_SEEDERS", "10"))
@@ -184,8 +185,8 @@ def extract_max_seeders(trackers: list) -> int:
     return max((int(t.get("seeders") or 0) for t in trackers), default=0)
 
 
-def build_text_message(torrent: dict, details: dict, primary_file: dict, max_seeders: int) -> str:
-    """Constructs a clean Telegram text message with video information and download links."""
+def build_text_message(torrent: dict, details: dict, primary_file: dict) -> str:
+    """Constructs a clean Telegram text message with video info and formatted [Magnet] hyperlink."""
     anime = details.get("anime") or torrent.get("anime") or {}
     anime_title = anime.get("english_title") or anime.get("title") or torrent.get("name", "Unknown Anime")
     episode_no = torrent.get("episode_no")
@@ -204,22 +205,21 @@ def build_text_message(torrent: dict, details: dict, primary_file: dict, max_see
         "",
         f"📁 **File:** `{filename}`",
         f"📦 **Size:** `{size_formatted}` ({size_bytes:,} bytes)",
-        f"👥 **Seeders:** `{max_seeders}`",
         f"🏷 **Release:** `{torrent_name}`",
         "",
-        "🔗 **Download / Mirror Links:**"
+        "🔗 **Download Links:**"
     ]
 
     for host, link in links.items():
         lines.append(f"• [{host}]({link})")
 
-    lines.append(f"• [Tsukihime Group Page](https://tsukihime.org/group/{TSUKIHIME_GROUP_ID}-yameii)")
+    if btih:
+        lines.append(f"• 🧲 [Magnet](magnet:?xt=urn:btih:{btih}&dn={urllib.parse.quote(filename)})")
 
     if nyaa_id:
-        lines.append(f"• [Nyaa.si Page](https://nyaa.si/view/{nyaa_id})")
+        lines.append(f"• [Nyaa.si](https://nyaa.si/view/{nyaa_id})")
 
-    if btih:
-        lines.append(f"\n🧲 **Magnet Link:**\n`magnet:?xt=urn:btih:{btih}&dn={urllib.parse.quote(filename)}`")
+    lines.append(f"• [Tsukihime Group Page](https://tsukihime.org/group/{TSUKIHIME_GROUP_ID}-yameii)")
 
     return "\n".join(lines)
 
@@ -242,7 +242,7 @@ def resolve_buzzheavier_link(url: str, timeout: int = 15) -> str:
         hx_redirect = resp.headers.get("HX-Redirect")
         if hx_redirect:
             return hx_redirect
-        return resp.geturl()
+        return None
     except Exception as e:
         logger.debug(f"Could not resolve BuzzHeavier link {url}: {e}")
         return None
@@ -321,11 +321,11 @@ def download_video_file(torrent: dict, details: dict, primary_file: dict, output
 async def run_yameii_sync(single_video=False, dry_run=False, limit_per_run=1):
     """
     Main sync engine:
-    1. Rechecks Tsukihime API starting from offset=0 (newest to oldest).
+    1. Rechecks Tsukihime API starting from offset=0 (newest releases) on every run to prioritize new videos.
     2. Skips already processed releases.
     3. Skips releases with single-digit seeders (< 10).
-    4. For releases > 2 GB: sends rich text message with all download links.
-    5. For releases <= 2 GB: downloads video and uploads via MTProto, falling back to text link if download fails.
+    4. For releases > 2 GB: sends rich text message with formatted [Magnet] hyperlink and mirror links.
+    5. For releases <= 2 GB: downloads and uploads as document (force_document=True) via MTProto.
     6. Stores full details into SQLite (yameii.db) and exports yameii.sql.
     """
     validate_environment(dry_run=dry_run)
@@ -358,12 +358,12 @@ async def run_yameii_sync(single_video=False, dry_run=False, limit_per_run=1):
     processed_in_this_run = 0
     has_more_unprocessed = False
 
-    # Start scanning from offset=0 (newest releases first)
+    # Start scanning from offset=0: Always prioritize newly released videos
     offset = 0
     page_limit = 100
     total_group_releases = 0
 
-    logger.info(f"Scanning Tsukihime Group {TSUKIHIME_GROUP_ID} (newest to oldest)...")
+    logger.info(f"Checking for new releases at offset 0 (newest to oldest)...")
 
     scan_active = True
     while scan_active:
@@ -438,6 +438,7 @@ async def run_yameii_sync(single_video=False, dry_run=False, limit_per_run=1):
             file_size = primary_file.get("size") or item.get("totalsize", 0)
             file_name = primary_file.get("filename") or item.get("name")
             direct_links = primary_file.get("links") or {}
+            btih = item.get("btih") or details.get("btih", "")
 
             telegram_msg_id = None
             sync_type = "TEXT_LINK"
@@ -447,19 +448,19 @@ async def run_yameii_sync(single_video=False, dry_run=False, limit_per_run=1):
 
             if is_above_2gb:
                 logger.info(f"Torrent {tid} size ({format_size(file_size)}) is above 2 GB limit. Sending text message with links...")
-                msg_text = build_text_message(item, details, primary_file, max_seeders)
+                msg_text = build_text_message(item, details, primary_file)
                 if not dry_run:
                     sent_msg = await client.send_message(channel, msg_text, parse_mode="md", link_preview=False)
                     telegram_msg_id = sent_msg.id
                 sync_type = "TEXT_LINK"
             else:
-                logger.info(f"Torrent {tid} size ({format_size(file_size)}) is <= 2 GB. Attempting download for video upload...")
+                logger.info(f"Torrent {tid} size ({format_size(file_size)}) is <= 2 GB. Attempting download for document upload...")
                 downloaded_file = None
                 if not dry_run:
                     downloaded_file = download_video_file(item, details, primary_file, DOWNLOAD_DIR)
 
                 if downloaded_file and downloaded_file.exists():
-                    logger.info(f"Uploading {downloaded_file.name} ({format_size(downloaded_file.stat().st_size)}) to Telegram channel...")
+                    logger.info(f"Uploading {downloaded_file.name} ({format_size(downloaded_file.stat().st_size)}) as document to Telegram channel...")
 
                     def upload_progress(current, total):
                         pct = (current / total) * 100 if total else 0
@@ -468,13 +469,20 @@ async def run_yameii_sync(single_video=False, dry_run=False, limit_per_run=1):
 
                     anime_info = details.get("anime") or item.get("anime") or {}
                     anime_disp = anime_info.get("english_title") or anime_info.get("title") or item.get("name")
-                    caption = (
-                        f"🎬 **{anime_disp}**\n\n"
-                        f"📁 `{file_name}`\n"
-                        f"📦 Size: `{format_size(file_size)}`\n"
-                        f"👥 Seeders: `{max_seeders}`\n"
-                        f"🔗 [Tsukihime](https://tsukihime.org/group/{TSUKIHIME_GROUP_ID}-yameii)"
-                    )
+                    
+                    caption_parts = [
+                        f"🎬 **{anime_disp}**",
+                        "",
+                        f"📁 `{file_name}`",
+                        f"📦 Size: `{format_size(file_size)}`"
+                    ]
+                    links_row = []
+                    if btih:
+                        links_row.append(f"🧲 [Magnet](magnet:?xt=urn:btih:{btih}&dn={urllib.parse.quote(file_name)})")
+                    links_row.append(f"🔗 [Tsukihime](https://tsukihime.org/group/{TSUKIHIME_GROUP_ID}-yameii)")
+                    caption_parts.append(" • ".join(links_row))
+                    
+                    caption = "\n".join(caption_parts)
                     if len(caption) > 1020:
                         caption = caption[:1017] + "..."
 
@@ -484,15 +492,15 @@ async def run_yameii_sync(single_video=False, dry_run=False, limit_per_run=1):
                             file=downloaded_file,
                             caption=caption,
                             parse_mode="md",
-                            supports_streaming=True,
+                            force_document=True,
                             progress_callback=upload_progress
                         )
                         telegram_msg_id = sent_msg.id
-                        sync_type = "VIDEO_UPLOAD"
-                        logger.info(f"Successfully uploaded video to Telegram! Message ID: {telegram_msg_id}")
+                        sync_type = "DOCUMENT_UPLOAD"
+                        logger.info(f"Successfully uploaded document to Telegram! Message ID: {telegram_msg_id}")
                     except Exception as upload_err:
-                        logger.error(f"Error uploading video to Telegram: {upload_err}. Falling back to text message with links.")
-                        msg_text = build_text_message(item, details, primary_file, max_seeders)
+                        logger.error(f"Error uploading document to Telegram: {upload_err}. Falling back to text message with links.")
+                        msg_text = build_text_message(item, details, primary_file)
                         sent_msg = await client.send_message(channel, msg_text, parse_mode="md", link_preview=False)
                         telegram_msg_id = sent_msg.id
                         sync_type = "TEXT_LINK"
@@ -502,7 +510,7 @@ async def run_yameii_sync(single_video=False, dry_run=False, limit_per_run=1):
                             logger.info(f"Removed local file: {downloaded_file.name}")
                 else:
                     logger.info(f"Video file download not available locally. Sending text message with file links...")
-                    msg_text = build_text_message(item, details, primary_file, max_seeders)
+                    msg_text = build_text_message(item, details, primary_file)
                     if not dry_run:
                         sent_msg = await client.send_message(channel, msg_text, parse_mode="md", link_preview=False)
                         telegram_msg_id = sent_msg.id
