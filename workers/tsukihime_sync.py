@@ -5,6 +5,7 @@ import argparse
 import logging
 import subprocess
 import shutil
+import urllib.parse
 import requests
 from typing import Optional, Tuple, List
 from pathlib import Path
@@ -25,8 +26,15 @@ logger = logging.getLogger("tsukihime_sync")
 CONVEX_URL = os.environ.get("CONVEX_URL", "").strip()
 TELEGRAM_API_ID = os.environ.get("TELEGRAM_API_ID", "").strip()
 TELEGRAM_API_HASH = os.environ.get("TELEGRAM_API_HASH", "").strip()
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_PIPELINE_BOT_TOKEN", "").strip() or os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-TELEGRAM_STRING_SESSION = os.environ.get("TELEGRAM_STRING_SESSION_2", "").strip() or os.environ.get("TELEGRAM_STRING_SESSION", "").strip()
+TELEGRAM_BOT_TOKEN = (
+    os.environ.get("TELEGRAM_TSUKIHIME_BOT_TOKEN", "").strip()
+    or os.environ.get("TELEGRAM_PIPELINE_BOT_TOKEN", "").strip()
+    or os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+)
+TELEGRAM_STRING_SESSION = (
+    os.environ.get("TELEGRAM_STRING_SESSION_2", "").strip()
+    or os.environ.get("TELEGRAM_STRING_SESSION", "").strip()
+)
 TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_TSUKIHIME", "").strip()
 
 TSUKIHIME_GROUP_ID = os.environ.get("TSUKIHIME_GROUP_ID", "12")
@@ -35,15 +43,27 @@ DOWNLOAD_DIR = Path(os.environ.get("DOWNLOAD_DIR", "./downloads_th"))
 TWO_GB_BYTES = 2000 * 1024 * 1024
 MIN_SEEDERS = int(os.environ.get("MIN_SEEDERS", "10"))
 
+TRACKERS = [
+    "http://nyaa.tracker.wf:7777/announce",
+    "udp://open.stealth.si:80/announce",
+    "udp://tracker.opentrackr.org:1337/announce",
+    "udp://exodus.desync.com:6969/announce",
+    "udp://tracker.torrent.eu.org:451/announce"
+]
+
 
 def validate_environment():
     missing = []
-    if not CONVEX_URL: missing.append("CONVEX_URL")
-    if not TELEGRAM_API_ID: missing.append("TELEGRAM_API_ID")
-    if not TELEGRAM_API_HASH: missing.append("TELEGRAM_API_HASH")
+    if not CONVEX_URL:
+        missing.append("CONVEX_URL")
+    if not TELEGRAM_API_ID:
+        missing.append("TELEGRAM_API_ID")
+    if not TELEGRAM_API_HASH:
+        missing.append("TELEGRAM_API_HASH")
     if not TELEGRAM_BOT_TOKEN and not TELEGRAM_STRING_SESSION:
         missing.append("TELEGRAM_PIPELINE_BOT_TOKEN (or TELEGRAM_STRING_SESSION_2)")
-    if not TELEGRAM_CHANNEL_ID: missing.append("TELEGRAM_CHANNEL_TSUKIHIME")
+    if not TELEGRAM_CHANNEL_ID:
+        missing.append("TELEGRAM_CHANNEL_TSUKIHIME")
 
     if missing:
         logger.critical(f"Missing required environment variables: {', '.join(missing)}")
@@ -51,9 +71,11 @@ def validate_environment():
 
 
 def format_bytes(size_bytes: int) -> str:
-    if not size_bytes: return "Unknown"
+    if not size_bytes:
+        return "Unknown"
     for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-        if size_bytes < 1024.0: return f"{size_bytes:.2f} {unit}"
+        if size_bytes < 1024.0:
+            return f"{size_bytes:.2f} {unit}"
         size_bytes /= 1024.0
     return f"{size_bytes:.2f} PB"
 
@@ -72,9 +94,13 @@ def fetch_tsukihime_releases(limit: int = 100, offset: int = 0) -> Tuple[List[di
             name = r.get("name") or r.get("title") or "Unknown"
             anime_meta = r.get("anime") or {}
             category = anime_meta.get("english_title") or anime_meta.get("title") or r.get("anime_title") or "Anime"
-            link = r.get("download_url") or r.get("torrent_url") or r.get("magnet") or ""
-            if not link and r.get("btih"):
-                link = f"magnet:?xt=urn:btih:{r['btih']}&dn={name}"
+            nyaa_id = r.get("nyaa_id")
+            if nyaa_id:
+                link = f"https://nyaa.si/download/{nyaa_id}.torrent"
+            else:
+                link = r.get("download_url") or r.get("torrent_url") or r.get("magnet") or ""
+                if not link and r.get("btih"):
+                    link = f"magnet:?xt=urn:btih:{r['btih']}&dn={name}"
             size = r.get("totalsize") or r.get("size") or 0
             seeders = r.get("max_seeders") or r.get("seeders") or 0
 
@@ -115,24 +141,39 @@ def scan_all_tsukihime_releases(convex_client: ConvexClient):
     logger.info(f"Scan complete. Total releases in group: {total_records}. Newly added to Convex: {total_added}.")
 
 
-def download_with_aria2(url_or_magnet: str, output_dir: Path, timeout: int = 1200) -> Optional[Path]:
+def download_with_aria2(url_or_magnet: str, output_dir: Path, timeout: int = 360) -> Optional[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
+    target = url_or_magnet
+    if target.startswith("magnet:?") and "&tr=" not in target:
+        target += "".join(f"&tr={urllib.parse.quote(t, safe='')}" for t in TRACKERS)
+
+    tracker_arg = f"--bt-tracker={','.join(TRACKERS)}"
+
     cmd = [
         "aria2c",
         "--seed-time=0",
         "--max-connection-per-server=16",
         "--split=16",
+        "--bt-stop-timeout=120",
+        tracker_arg,
+        "--enable-dht=true",
         "--summary-interval=10",
         "--auto-file-renaming=false",
         "--allow-overwrite=true",
+        "--user-agent=Mozilla/5.0",
         "--dir", str(output_dir),
-        url_or_magnet
+        target
     ]
     try:
         proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=timeout)
         if proc.returncode != 0:
+            logger.warning(f"aria2c returned code {proc.returncode}. Last output:\n{proc.stdout[-500:] if proc.stdout else ''}")
             return None
-    except Exception:
+    except subprocess.TimeoutExpired:
+        logger.warning(f"aria2c timed out after {timeout}s.")
+        return None
+    except Exception as e:
+        logger.warning(f"aria2c error: {e}")
         return None
 
     video_exts = {".mp4", ".mkv", ".webm"}
@@ -168,12 +209,18 @@ async def run_sync(single_video: bool = False, scan_all: bool = False):
     except ValueError:
         channel_id = TELEGRAM_CHANNEL_ID
 
-    if TELEGRAM_BOT_TOKEN:
+    # Prioritize dedicated string session if available; fallback to bot token
+    if TELEGRAM_STRING_SESSION:
+        logger.info("Connecting to Telegram using MTProto StringSession...")
+        client = TelegramClient(StringSession(TELEGRAM_STRING_SESSION), int(TELEGRAM_API_ID), TELEGRAM_API_HASH)
+        await client.start()
+    elif TELEGRAM_BOT_TOKEN:
+        logger.info("Connecting to Telegram using Bot Token...")
         client = TelegramClient(StringSession(), int(TELEGRAM_API_ID), TELEGRAM_API_HASH)
         await client.start(bot_token=TELEGRAM_BOT_TOKEN)
     else:
-        client = TelegramClient(StringSession(TELEGRAM_STRING_SESSION), int(TELEGRAM_API_ID), TELEGRAM_API_HASH)
-        await client.start()
+        logger.critical("No Telegram credentials configured.")
+        return
 
     logger.info("Connected to Telegram successfully.")
     target_channel = await client.get_entity(channel_id)
@@ -185,52 +232,58 @@ async def run_sync(single_video: bool = False, scan_all: bool = False):
         category = item.get("category", "")
         link = item.get("link", "")
         file_size = item.get("fileSize") or 0
-        seeders = item.get("seeders") or 0
+        seeders = item.get("seeders")
 
-        if seeders and seeders < MIN_SEEDERS:
+        if seeders is not None and seeders > 0 and seeders < MIN_SEEDERS:
             logger.info(f"Skipping {title}: seeders {seeders} < {MIN_SEEDERS}")
             convex_client.mutation("tsukihime:updateUploadStatus", {
                 "link": link,
-                "status": "skipped"
+                "status": "skipped_low_seeders"
             })
             continue
 
         if file_size > TWO_GB_BYTES:
-            logger.info(f"File size {format_bytes(file_size)} exceeds 2GB. Sending text link...")
-            caption = (
-                f"🎬 **{title}**\n\n"
-                f"📁 **Category**: {category or 'Anime'}\n"
-                f"💾 **Size**: {format_bytes(file_size)} (> 2GB Limit)\n\n"
-                f"🔗 **Download Link**:\n`{link}`"
-            )
-            msg = await client.send_message(target_channel, caption)
+            logger.info(f"Skipping {title}: File size {format_bytes(file_size)} exceeds 2GB limit.")
             convex_client.mutation("tsukihime:updateUploadStatus", {
                 "link": link,
-                "telegramMessageId": str(msg.id),
-                "telegramFileUniqueId": "N/A",
-                "status": "uploaded_text"
+                "status": "skipped_over_2gb"
             })
-            if single_video:
-                has_more = len(pending) > 1
-                break
             continue
 
         item_dir = DOWNLOAD_DIR / str(int(time.time()))
+        logger.info(f"Downloading: {title} ...")
         downloaded = download_with_aria2(link, item_dir)
 
         if not downloaded:
-            logger.error(f"Download failed for {title}. Skipping without sending text message.")
+            logger.error(f"Download failed for {title}. Marking as download_failed in Convex.")
+            convex_client.mutation("tsukihime:updateUploadStatus", {
+                "link": link,
+                "status": "download_failed"
+            })
             shutil.rmtree(item_dir, ignore_errors=True)
-            if single_video:
-                has_more = len(pending) > 1
-                break
+            # Proceed to try the next release without breaking the loop!
             continue
 
         actual_size = downloaded.stat().st_size
+        if actual_size > TWO_GB_BYTES:
+            logger.info(f"Downloaded file {title} is {format_bytes(actual_size)}, which exceeds 2GB. Skipping upload.")
+            convex_client.mutation("tsukihime:updateUploadStatus", {
+                "link": link,
+                "status": "skipped_over_2gb"
+            })
+            shutil.rmtree(item_dir, ignore_errors=True)
+            continue
+
         caption = f"🎬 **{title}**\n💾 Size: {format_bytes(actual_size)}"
+        logger.info(f"Uploading {downloaded.name} ({format_bytes(actual_size)}) to Telegram channel {channel_id}...")
 
         try:
-            sent_msg = await client.send_file(target_channel, downloaded, caption=caption, supports_streaming=True)
+            sent_msg = await client.send_file(
+                target_channel,
+                downloaded,
+                caption=caption,
+                supports_streaming=True
+            )
             file_unique_id = ""
             if sent_msg.media and hasattr(sent_msg.media, "document") and sent_msg.media.document:
                 file_unique_id = str(sent_msg.media.document.id)
@@ -241,15 +294,18 @@ async def run_sync(single_video: bool = False, scan_all: bool = False):
                 "telegramFileUniqueId": file_unique_id,
                 "status": "uploaded_file"
             })
-            logger.info(f"Uploaded {title} to Message ID {sent_msg.id}")
+            logger.info(f"Successfully uploaded {title} to Message ID {sent_msg.id}")
+            if single_video:
+                has_more = True
+                break
         except Exception as e:
-            logger.error(f"Error uploading {title}: {e}")
+            logger.error(f"Error uploading {title} to Telegram: {e}")
+            convex_client.mutation("tsukihime:updateUploadStatus", {
+                "link": link,
+                "status": "upload_failed"
+            })
         finally:
             shutil.rmtree(item_dir, ignore_errors=True)
-
-        if single_video:
-            has_more = len(pending) > 1
-            break
 
     await client.disconnect()
 
