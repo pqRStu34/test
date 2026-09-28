@@ -27,8 +27,18 @@ if not exist "data.db.enc" (
 
 if not exist "pb_data" mkdir pb_data
 
+set OPENSSL_CMD=openssl
+where openssl >nul 2>nul
+if %errorlevel% neq 0 (
+    if exist "C:\Program Files\Git\usr\bin\openssl.exe" (
+        set OPENSSL_CMD="C:\Program Files\Git\usr\bin\openssl.exe"
+    ) else if exist "C:\Program Files (x86)\Git\usr\bin\openssl.exe" (
+        set OPENSSL_CMD="C:\Program Files (x86)\Git\usr\bin\openssl.exe"
+    )
+)
+
 echo [i] Decrypting database...
-openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in data.db.enc -out pb_data\data.db -k "%KEY%"
+%OPENSSL_CMD% enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in data.db.enc -out pb_data\data.db -k "%KEY%"
 if %errorlevel% neq 0 (
     echo [!] Decryption failed! Please verify your password / encryption key.
     del data.db.enc 2>nul
