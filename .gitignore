@@ -11,13 +11,10 @@ venv/
 *.enc
 downloads/
 pb_data/
-pb_migrations/
 pocketbase.exe
 pb.zip
 CHANGELOG.md
 LICENSE.md
-start_pocketbase.bat
-decrypt_pocketbase.bat
 run_output.log
 node_modules/
 .convex/

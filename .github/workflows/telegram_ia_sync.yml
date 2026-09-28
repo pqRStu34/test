@@ -60,6 +60,8 @@ jobs:
           mkdir -p /tmp/pb_bin
           unzip -o pb.zip pocketbase -d /tmp/pb_bin
           chmod +x /tmp/pb_bin/pocketbase
+          /tmp/pb_bin/pocketbase migrate up --dir=./pb_data --migrationsDir=./pb_migrations || true
+          /tmp/pb_bin/pocketbase admin create "admin@pocketbase.local" "admin123456789" --dir=./pb_data || true
           /tmp/pb_bin/pocketbase serve --http=127.0.0.1:8090 --dir=./pb_data &
           for i in $(seq 1 10); do
             if curl -s "http://127.0.0.1:8090/api/health" | grep -q "healthy"; then
