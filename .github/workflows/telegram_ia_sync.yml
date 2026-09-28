@@ -34,10 +34,17 @@ jobs:
           pip install -r requirements.txt
 
       - name: Restore PocketBase Database
+        env:
+          PB_ENCRYPTION_KEY: ${{ secrets.PB_ENCRYPTION_KEY || secrets.TELEGRAM_API_HASH }}
         run: |
           mkdir -p pb_data
           git fetch origin pocketbase-data:pocketbase-data || true
-          git show pocketbase-data:data.db > pb_data/data.db 2>/dev/null || true
+          if git show pocketbase-data:data.db.enc > data.db.enc 2>/dev/null && [ -s data.db.enc ]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in data.db.enc -out pb_data/data.db -k "$PB_ENCRYPTION_KEY" || echo "Decryption failed."
+            rm -f data.db.enc
+          elif git show pocketbase-data:data.db > pb_data/data.db 2>/dev/null; then
+            echo "Found unencrypted data.db."
+          fi
 
       - name: Install & Launch PocketBase
         run: |
@@ -71,16 +78,19 @@ jobs:
             echo "has_more=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Persist PocketBase Database
+      - name: Persist PocketBase Database (Encrypted)
         if: always()
+        env:
+          PB_ENCRYPTION_KEY: ${{ secrets.PB_ENCRYPTION_KEY || secrets.TELEGRAM_API_HASH }}
         run: |
           if [ -f pb_data/data.db ]; then
             git config --global user.name "github-actions[bot]"
             git config --global user.email "github-actions[bot]@users.noreply.github.com"
             git checkout -B pocketbase-data
-            cp pb_data/data.db ./data.db
-            git add -f data.db
-            git diff --staged --quiet || (git commit -m "auto: persist pocketbase database [skip ci]" && git push origin pocketbase-data --force)
+            openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -in pb_data/data.db -out ./data.db.enc -k "$PB_ENCRYPTION_KEY"
+            git rm -f data.db 2>/dev/null || true
+            git add -f data.db.enc
+            git diff --staged --quiet || (git commit -m "auto: persist encrypted pocketbase database [skip ci]" && git push origin pocketbase-data --force)
             git checkout main
           fi
 
