@@ -103,7 +103,14 @@ def fetch_existing_ia_files(item_id: str) -> set:
         resp = requests.get(url, timeout=30)
         if resp.status_code == 200:
             files_data = resp.json().get("result", [])
-            return {str(f.get("name", "")).strip().lower() for f in files_data}
+            existing = set()
+            for f in files_data:
+                name = str(f.get("name", "")).strip().lower()
+                if name:
+                    existing.add(name)
+                    existing.add(Path(name).name.lower())
+                    existing.add(name.replace("\\", "/"))
+            return existing
     except Exception as e:
         logger.warning(f"Could not fetch IA metadata: {e}")
     return set()

@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: '0 */2 * * *'
   workflow_dispatch:
+    inputs:
+      scan_all:
+        description: 'Scan and backfill all releases into Convex'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: tsukihime-sync
@@ -49,7 +55,11 @@ jobs:
           TSUKIHIME_GROUP_ID: "12"
           MIN_SEEDERS: "10"
         run: |
-          python workers/tsukihime_sync.py --single-video | tee tsukihime_output.log
+          EXTRA_ARGS=""
+          if [ "${{ github.event.inputs.scan_all }}" = "true" ]; then
+            EXTRA_ARGS="--scan-all"
+          fi
+          python workers/tsukihime_sync.py --single-video $EXTRA_ARGS | tee tsukihime_output.log
           if grep -q "RESULT_HAS_MORE_VIDEOS=true" tsukihime_output.log; then
             echo "has_more=true" >> $GITHUB_OUTPUT
           else

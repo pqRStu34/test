@@ -6,7 +6,7 @@ import logging
 import subprocess
 import shutil
 import requests
-from typing import Optional
+from typing import Optional, Tuple, List
 from pathlib import Path
 from dotenv import load_dotenv
 from telethon import TelegramClient
@@ -58,14 +58,14 @@ def format_bytes(size_bytes: int) -> str:
     return f"{size_bytes:.2f} PB"
 
 
-def fetch_tsukihime_releases(limit: int = 50) -> list:
-    url = f"{TSUKIHIME_API_BASE}/groups/{TSUKIHIME_GROUP_ID}?limit={limit}"
-    logger.info(f"Fetching Tsukihime group {TSUKIHIME_GROUP_ID} releases...")
+def fetch_tsukihime_releases(limit: int = 100, offset: int = 0) -> Tuple[List[dict], int]:
+    url = f"{TSUKIHIME_API_BASE}/groups/{TSUKIHIME_GROUP_ID}"
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
-        resp = requests.get(url, headers=headers, timeout=20)
+        resp = requests.get(url, params={"limit": limit, "offset": offset}, headers=headers, timeout=20)
         resp.raise_for_status()
         data = resp.json()
+        total = data.get("total") or 0
         releases = data.get("results", []) or data.get("releases", []) or data.get("torrents", []) or []
         items = []
         for r in releases:
@@ -86,10 +86,33 @@ def fetch_tsukihime_releases(limit: int = 50) -> list:
                     "fileSize": size if size > 0 else None,
                     "seeders": seeders
                 })
-        return items
+        return items, total
     except Exception as e:
-        logger.error(f"Error fetching Tsukihime releases: {e}")
-        return []
+        logger.error(f"Error fetching Tsukihime releases at offset {offset}: {e}")
+        return [], 0
+
+
+def scan_all_tsukihime_releases(convex_client: ConvexClient):
+    offset = 0
+    page_limit = 100
+    total_added = 0
+    total_records = 0
+
+    logger.info("Scanning all Tsukihime Group 12 releases into Convex...")
+    while True:
+        items, total = fetch_tsukihime_releases(limit=page_limit, offset=offset)
+        if not items:
+            break
+        total_records = total
+        added = convex_client.mutation("tsukihime:addReleases", {"releases": items})
+        total_added += added
+        offset += len(items)
+        logger.info(f"Ingested offset {offset}/{total_records} (New in batch: {added}, Total new: {total_added})")
+        if offset >= total_records or len(items) < page_limit:
+            break
+        time.sleep(0.3)
+
+    logger.info(f"Scan complete. Total releases in group: {total_records}. Newly added to Convex: {total_added}.")
 
 
 def download_with_aria2(url_or_magnet: str, output_dir: Path, timeout: int = 1200) -> Optional[Path]:
@@ -120,16 +143,19 @@ def download_with_aria2(url_or_magnet: str, output_dir: Path, timeout: int = 120
     return None
 
 
-async def run_sync(single_video: bool = False):
+async def run_sync(single_video: bool = False, scan_all: bool = False):
     validate_environment()
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
     convex_client = ConvexClient(CONVEX_URL)
 
-    releases = fetch_tsukihime_releases(limit=50)
-    if releases:
-        new_count = convex_client.mutation("tsukihime:addReleases", {"releases": releases})
-        logger.info(f"Ingested {new_count} new Tsukihime releases into Convex.")
+    if scan_all:
+        scan_all_tsukihime_releases(convex_client)
+    else:
+        releases, _ = fetch_tsukihime_releases(limit=100, offset=0)
+        if releases:
+            new_count = convex_client.mutation("tsukihime:addReleases", {"releases": releases})
+            logger.info(f"Ingested {new_count} new Tsukihime releases into Convex.")
 
     pending = convex_client.query("tsukihime:getPendingReleases", {"limit": 50})
     if not pending:
@@ -193,15 +219,7 @@ async def run_sync(single_video: bool = False):
         downloaded = download_with_aria2(link, item_dir)
 
         if not downloaded:
-            logger.warning(f"Download failed for {title}. Falling back to text message...")
-            caption = f"🎬 **{title}**\n💾 Size: {format_bytes(file_size)}\n🔗 Link:\n`{link}`"
-            msg = await client.send_message(target_channel, caption)
-            convex_client.mutation("tsukihime:updateUploadStatus", {
-                "link": link,
-                "telegramMessageId": str(msg.id),
-                "telegramFileUniqueId": "N/A",
-                "status": "uploaded_text"
-            })
+            logger.error(f"Download failed for {title}. Skipping without sending text message.")
             shutil.rmtree(item_dir, ignore_errors=True)
             if single_video:
                 has_more = len(pending) > 1
@@ -242,10 +260,11 @@ async def run_sync(single_video: bool = False):
 def main():
     parser = argparse.ArgumentParser(description="Tsukihime Sync Worker")
     parser.add_argument("--single-video", action="store_true", help="Process 1 video workload and exit")
+    parser.add_argument("--scan-all", action="store_true", help="Scan and ingest all 13,473 releases into Convex")
     args = parser.parse_args()
 
     import asyncio
-    asyncio.run(run_sync(single_video=args.single_video))
+    asyncio.run(run_sync(single_video=args.single_video, scan_all=args.scan_all))
 
 
 if __name__ == "__main__":

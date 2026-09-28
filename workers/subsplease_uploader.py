@@ -157,22 +157,8 @@ async def run_uploader(single_video: bool = False):
         downloaded_file = download_with_aria2(link, item_dl_dir)
 
         if not downloaded_file:
-            logger.error(f"Download failed for {title}. Falling back to text message...")
-            caption = (
-                f"🎬 **{title}**\n\n"
-                f"📁 **Category**: {category or 'Anime'}\n"
-                f"💾 **Size**: {format_bytes(file_size)}\n\n"
-                f"🔗 **Download Link**:\n`{link}`"
-            )
-            msg = await client.send_message(target_channel, caption)
-            convex_client.mutation("subsplease:updateUploadStatus", {
-                "link": link,
-                "telegramMessageId": str(msg.id),
-                "telegramFileUniqueId": "N/A",
-                "status": "uploaded_text"
-            })
+            logger.error(f"Download failed for {title}. Skipping without sending text message.")
             shutil.rmtree(item_dl_dir, ignore_errors=True)
-            processed_count += 1
             if single_video:
                 has_more = len(pending) > 1
                 break
