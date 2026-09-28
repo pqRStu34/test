@@ -1326,10 +1326,39 @@ async function executeSearchAndRespond(chatId, query, env) {
 // POCKETBASE & SUPABASE JSON GENERATION
 // ==========================================
 async function fetchEpisodesFromPocketBase(animeId, env) {
-  const pbUrl = (env.POCKETBASE_URL || 'http://127.0.0.1:8090').replace(/\/$/, '');
+  const pbUrl = (env.POCKETBASE_URL || '').replace(/\/$/, '');
+  if (!pbUrl || pbUrl.includes('127.0.0.1') || pbUrl.includes('localhost')) {
+    throw new Error(`POCKETBASE_URL is not configured or is set to localhost. Cloudflare Workers run in the cloud and cannot connect directly to your local PC. To enable the bot to query PocketBase, expose it via Cloudflare Tunnel ('cloudflared tunnel --url http://127.0.0.1:8090') or host it online. Alternatively, run 'python generate_json.py ${animeId}' locally.`);
+  }
+
+  const headers = {};
+  if (env.POCKETBASE_TOKEN) {
+    headers['Authorization'] = `Bearer ${env.POCKETBASE_TOKEN}`;
+  } else if (env.POCKETBASE_ADMIN_EMAIL && env.POCKETBASE_ADMIN_PASSWORD) {
+    try {
+      const authRes = await fetch(`${pbUrl}/api/admins/auth-with-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identity: env.POCKETBASE_ADMIN_EMAIL,
+          password: env.POCKETBASE_ADMIN_PASSWORD
+        })
+      });
+      if (authRes.ok) {
+        const authData = await authRes.json();
+        if (authData.token) headers['Authorization'] = `Bearer ${authData.token}`;
+      }
+    } catch (e) {
+      console.warn('PocketBase admin auth failed, proceeding unauthenticated:', e);
+    }
+  }
+
   const url = `${pbUrl}/api/collections/completed_syncs/records?filter=(anime_id='${encodeURIComponent(animeId)}')&sort=+episode_number&perPage=500`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`PocketBase returned HTTP ${res.status}`);
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`PocketBase returned HTTP ${res.status}: ${errText}`);
+  }
   const data = await res.json();
   return data.items || [];
 }
