@@ -16,7 +16,7 @@ if not defined KEY (
 )
 
 echo [i] Fetching latest encrypted database from pocketbase-data branch...
-git fetch origin pocketbase-data:pocketbase-data
+git fetch origin +pocketbase-data:pocketbase-data
 git show pocketbase-data:data.db.enc > data.db.enc 2>nul
 
 if not exist "data.db.enc" (
