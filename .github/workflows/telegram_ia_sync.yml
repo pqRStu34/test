@@ -45,6 +45,13 @@ jobs:
           elif git show pocketbase-data:data.db > pb_data/data.db 2>/dev/null; then
             echo "Found unencrypted data.db."
           fi
+          if [ -f pb_data/data.db ]; then
+            HEADER=$(head -c 15 pb_data/data.db 2>/dev/null || true)
+            if [ "$HEADER" != "SQLite format 3" ]; then
+              echo "Warning: pb_data/data.db is not a valid SQLite database. Resetting."
+              rm -f pb_data/data.db
+            fi
+          fi
 
       - name: Install & Launch PocketBase
         run: |
