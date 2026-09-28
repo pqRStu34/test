@@ -66,11 +66,12 @@ def fetch_tsukihime_releases(limit: int = 50) -> list:
         resp = requests.get(url, headers=headers, timeout=20)
         resp.raise_for_status()
         data = resp.json()
-        releases = data.get("releases", []) or data.get("torrents", []) or []
+        releases = data.get("results", []) or data.get("releases", []) or data.get("torrents", []) or []
         items = []
         for r in releases:
             name = r.get("name") or r.get("title") or "Unknown"
-            category = r.get("anime_title") or r.get("category") or "Anime"
+            anime_meta = r.get("anime") or {}
+            category = anime_meta.get("english_title") or anime_meta.get("title") or r.get("anime_title") or "Anime"
             link = r.get("download_url") or r.get("torrent_url") or r.get("magnet") or ""
             if not link and r.get("btih"):
                 link = f"magnet:?xt=urn:btih:{r['btih']}&dn={name}"
