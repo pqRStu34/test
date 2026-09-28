@@ -1,18 +1,27 @@
-# Byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
 
-# Temporary downloads folder
-downloads/
-
-# Local session & credentials files
-*.session
-*.session-journal
-session_string.txt
+# Environment Variables
 .env
+*.env
+
+# Local Storage & Downloads
+downloads/
+pb_data/
+pocketbase.exe
+pb.zip
 run_output.log
 
-# OS generated files
-.DS_Store
-Thumbs.db
+# Node & Convex
+node_modules/
+.convex/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

@@ -1,0 +1,46 @@
+name: SubsPlease RSS Ingestion (Convex)
+
+on:
+  schedule:
+    - cron: '0 * * * *' # Every 1 hour
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  fetch_rss:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Fetch SubsPlease RSS & Ingest to Convex
+        id: rss_step
+        env:
+          CONVEX_URL: ${{ secrets.CONVEX_URL }}
+        run: |
+          python workers/subsplease_rss_fetcher.py | tee rss_output.log
+          NEW_COUNT=$(grep -oP 'RESULT_NEW_RELEASES=\K[0-9]+' rss_output.log || echo "0")
+          echo "new_releases=$NEW_COUNT" >> $GITHUB_OUTPUT
+
+      - name: Trigger Uploader if New Releases Found
+        if: steps.rss_step.outputs.new_releases != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Found ${{ steps.rss_step.outputs.new_releases }} new releases. Triggering uploader..."
+          gh workflow run subsplease_upload.yml

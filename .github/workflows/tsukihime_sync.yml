@@ -2,27 +2,24 @@ name: Tsukihime Group 12 to Telegram Sync
 
 on:
   schedule:
-    - cron: '0 */2 * * *' # Recurring backup run every 2 hours
-  workflow_dispatch: # Manual trigger from GitHub Actions tab
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
 
 concurrency:
-  group: yameii-sync
+  group: tsukihime-sync
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
   actions: write
 
 jobs:
-  sync:
+  sync_workload:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
-        with:
-          ref: Yameii
-          persist-credentials: true
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
@@ -40,36 +37,29 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Tsukihime Video Workload
+      - name: Run Tsukihime Workload
         id: sync_step
         env:
+          CONVEX_URL: ${{ secrets.CONVEX_URL }}
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID || '-1004492582679' }}
+          TELEGRAM_CHANNEL_TSUKIHIME: ${{ secrets.TELEGRAM_CHANNEL_TSUKIHIME }}
           TSUKIHIME_GROUP_ID: "12"
           MIN_SEEDERS: "10"
-          SINGLE_VIDEO: "true"
         run: |
-          python yameii_sync.py --single-video | tee run_output.log
-          if grep -q "RESULT_HAS_MORE_VIDEOS=true" run_output.log; then
+          python workers/tsukihime_sync.py --single-video | tee tsukihime_output.log
+          if grep -q "RESULT_HAS_MORE_VIDEOS=true" tsukihime_output.log; then
             echo "has_more=true" >> $GITHUB_OUTPUT
           else
             echo "has_more=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Commit and Push Database & SQL Dump
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add yameii.db yameii.sql
-          git diff --quiet && git diff --staged --quiet || (git commit -m "auto: synced yameii video workload [skip ci]" && git push origin Yameii)
-
-      - name: Auto-Trigger Next Video Workload (After 60 Seconds)
+      - name: Auto-Trigger Next Workload
         if: steps.sync_step.outputs.has_more == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Video workload finished and saved to git database. Waiting 60 seconds before dispatching next workload..."
-          sleep 60
-          gh workflow run yameii_sync.yml --ref Yameii
+          echo "Workload saved to Convex. Dispatching next release in 30 seconds..."
+          sleep 30
+          gh workflow run tsukihime_sync.yml

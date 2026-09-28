@@ -1,0 +1,12 @@
+{
+  "name": "anime-sync-convex",
+  "version": "1.0.0",
+  "description": "Convex backend functions for anime release tracking",
+  "scripts": {
+    "dev": "npx convex dev",
+    "deploy": "npx convex deploy"
+  },
+  "dependencies": {
+    "convex": "^1.17.0"
+  }
+}
