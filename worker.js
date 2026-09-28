@@ -554,10 +554,19 @@ export default {
 // ==========================================
 async function handleMessage(message, env) {
   const chatId = message.chat.id;
-  const fromId = message.from.id;
+  const fromId = message.from ? message.from.id : chatId;
   const text = (message.text || '').trim();
 
-  // Permission Check
+  // If a file is posted in the target IA channel or group by ANY user or bot, trigger sync
+  const targetChannel = env.TELEGRAM_CHANNEL_IA_SOURCE || '';
+  const hasFile = Boolean(message.video || message.document || message.animation);
+  if (hasFile && targetChannel && String(chatId) === String(targetChannel)) {
+    console.log(`[i] New file detected in channel/group ${chatId} (msg: ${message.message_id}). Pinging GitHub Actions...`);
+    await pingGitHubWorkflow(env, 'new_file_detected');
+    return;
+  }
+
+  // Permission Check for bot commands
   if (!isAuthorized(fromId, env)) {
     return sendMessage(chatId, `⛔ <b>Access Denied</b>\n\nYour Telegram User ID is: <code>${fromId}</code>\nTo authorize yourself, add this ID to your Cloudflare Worker secrets as <code>ADMIN_USER_ID</code>.`, {}, env);
   }
