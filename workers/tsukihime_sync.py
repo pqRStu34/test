@@ -277,12 +277,18 @@ async def run_sync(single_video: bool = False, scan_all: bool = False):
         caption = f"🎬 **{title}**\n💾 Size: {format_bytes(actual_size)}"
         logger.info(f"Uploading {downloaded.name} ({format_bytes(actual_size)}) to Telegram channel {channel_id}...")
 
+        def progress_cb(current, total):
+            pct = (current / total) * 100 if total else 0
+            if current == total or int(pct) % 25 == 0:
+                logger.info(f"Uploading {downloaded.name}: {current}/{total} bytes ({pct:.1f}%)")
+
         try:
             sent_msg = await client.send_file(
                 target_channel,
                 downloaded,
                 caption=caption,
-                supports_streaming=True
+                supports_streaming=True,
+                progress_callback=progress_cb
             )
             file_unique_id = ""
             if sent_msg.media and hasattr(sent_msg.media, "document") and sent_msg.media.document:
