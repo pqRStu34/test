@@ -50,11 +50,17 @@ jobs:
         run: |
           PB_VERSION="0.22.20"
           curl -sL "https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/pocketbase_${PB_VERSION}_linux_amd64.zip" -o pb.zip
-          unzip -o pb.zip pocketbase
-          chmod +x pocketbase
-          ./pocketbase serve --http=127.0.0.1:8090 --dir=./pb_data &
-          sleep 3
-          curl -s "http://127.0.0.1:8090/api/health" || true
+          mkdir -p /tmp/pb_bin
+          unzip -o pb.zip pocketbase -d /tmp/pb_bin
+          chmod +x /tmp/pb_bin/pocketbase
+          /tmp/pb_bin/pocketbase serve --http=127.0.0.1:8090 --dir=./pb_data &
+          for i in $(seq 1 10); do
+            if curl -s "http://127.0.0.1:8090/api/health" | grep -q "healthy"; then
+              echo "PocketBase is healthy."
+              break
+            fi
+            sleep 1
+          done
 
       - name: Run Telegram to Internet Archive Workload
         id: sync_step
@@ -83,7 +89,7 @@ jobs:
         env:
           PB_ENCRYPTION_KEY: ${{ secrets.PB_ENCRYPTION_KEY || secrets.TELEGRAM_API_HASH }}
         run: |
-          if [ -f pb_data/data.db ]; then
+          if [ -s pb_data/data.db ]; then
             git config --global user.name "github-actions[bot]"
             git config --global user.email "github-actions[bot]@users.noreply.github.com"
             git checkout -B pocketbase-data

@@ -154,12 +154,12 @@ async def run_sync_loop(single_video: bool = False):
     except ValueError:
         channel_id = TELEGRAM_CHANNEL_ID
 
-    if TELEGRAM_BOT_TOKEN:
-        client = TelegramClient(StringSession(), int(TELEGRAM_API_ID), TELEGRAM_API_HASH)
-        await client.start(bot_token=TELEGRAM_BOT_TOKEN)
-    else:
+    if TELEGRAM_STRING_SESSION:
         client = TelegramClient(StringSession(TELEGRAM_STRING_SESSION), int(TELEGRAM_API_ID), TELEGRAM_API_HASH)
         await client.start()
+    elif TELEGRAM_BOT_TOKEN:
+        client = TelegramClient(StringSession(), int(TELEGRAM_API_ID), TELEGRAM_API_HASH)
+        await client.start(bot_token=TELEGRAM_BOT_TOKEN)
 
     logger.info("Connected to Telegram successfully.")
     target_channel = await client.get_entity(channel_id)
