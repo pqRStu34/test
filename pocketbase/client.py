@@ -15,14 +15,12 @@ class PocketBaseClient:
         self.collection_name = "completed_syncs"
 
     def authenticate_admin(self) -> bool:
-        """Authenticate as admin to ensure full read/write access to collections."""
         try:
             url = f"{self.base_url}/api/admins/auth-with-password"
             resp = requests.post(url, json={"identity": self.admin_email, "password": self.admin_password}, timeout=5)
             if resp.status_code == 200:
                 self.token = resp.json().get("token", "")
                 return True
-            # In PocketBase v0.20+, superuser auth route may also be /api/collections/_superusers/auth-with-password
             url2 = f"{self.base_url}/api/collections/_superusers/auth-with-password"
             resp2 = requests.post(url2, json={"identity": self.admin_email, "password": self.admin_password}, timeout=5)
             if resp2.status_code == 200:
@@ -39,7 +37,6 @@ class PocketBaseClient:
         return headers
 
     def ensure_collection(self) -> bool:
-        """Ensures the completed_syncs collection exists with correct fields and indexes."""
         self.authenticate_admin()
         url = f"{self.base_url}/api/collections/{self.collection_name}"
         try:
@@ -49,7 +46,6 @@ class PocketBaseClient:
         except Exception as e:
             logger.warning(f"Error checking PocketBase collection: {e}")
 
-        # Create collection
         create_url = f"{self.base_url}/api/collections"
         schema_payload = {
             "name": self.collection_name,
@@ -88,7 +84,6 @@ class PocketBaseClient:
         return False
 
     def get_completed_message_ids(self) -> Set[str]:
-        """Fetches all message_ids recorded in PocketBase."""
         ids: Set[str] = set()
         page = 1
         per_page = 500
@@ -115,12 +110,10 @@ class PocketBaseClient:
         return ids
 
     def record_completed_sync(self, data: Dict[str, Any]) -> bool:
-        """Upserts a sync record in PocketBase."""
         message_id = str(data.get("message_id", "")).strip()
         if not message_id:
             return False
 
-        # Check existing
         url_search = f"{self.base_url}/api/collections/{self.collection_name}/records?filter=(message_id='{message_id}')"
         try:
             resp = requests.get(url_search, headers=self._headers(), timeout=5)
@@ -132,7 +125,6 @@ class PocketBaseClient:
         except Exception as e:
             logger.debug(f"Error checking existing record in PocketBase: {e}")
 
-        # Insert new
         url_create = f"{self.base_url}/api/collections/{self.collection_name}/records"
         try:
             resp = requests.post(url_create, headers=self._headers(), json=data, timeout=5)
@@ -142,7 +134,6 @@ class PocketBaseClient:
             return False
 
     def query_by_anime_id(self, anime_id: str) -> List[Dict[str, Any]]:
-        """Queries PocketBase records matching anime_id sorted by episode_number."""
         records: List[Dict[str, Any]] = []
         page = 1
         per_page = 200

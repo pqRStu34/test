@@ -18,7 +18,6 @@ from telethon.tl.types import (
 )
 import internetarchive as ia
 
-# Add parent directory for pocketbase client import
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from pocketbase.client import PocketBaseClient
 
@@ -34,23 +33,19 @@ logger = logging.getLogger("tg_ia_sync")
 TELEGRAM_API_ID = os.environ.get("TELEGRAM_API_ID", "").strip()
 TELEGRAM_API_HASH = os.environ.get("TELEGRAM_API_HASH", "").strip()
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-TELEGRAM_STRING_SESSION = os.environ.get("TELEGRAM_STRING_SESSION", "").strip()
+TELEGRAM_STRING_SESSION = os.environ.get("TELEGRAM_STRING_SESSION_3", "").strip() or os.environ.get("TELEGRAM_STRING_SESSION", "").strip()
 TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_IA_SOURCE", "").strip() or os.environ.get("TELEGRAM_CHANNEL_ID", "").strip()
 
 IA_ACCESS_KEY = os.environ.get("IA_ACCESS_KEY", "").strip()
 IA_SECRET_KEY = os.environ.get("IA_SECRET_KEY", "").strip()
 IA_ITEM_IDENTIFIER = os.environ.get("IA_ITEM_IDENTIFIER", "").strip()
 
-FILESTREAM_BASE_URL = os.environ.get(
-    "FILESTREAM_BASE_URL",
-    "https://pqrstu34two-anime-archive-v2-stream.hf.space"
-).strip()
+FILESTREAM_BASE_URL = os.environ.get("FILESTREAM_BASE_URL", "").strip().rstrip("/")
 POCKETBASE_URL = os.environ.get("POCKETBASE_URL", "http://127.0.0.1:8090").strip()
 
 DOWNLOAD_DIR = Path(os.environ.get("DOWNLOAD_DIR", "./downloads_ia"))
-MAX_RUNTIME_SECONDS = int(os.environ.get("MAX_RUNTIME_SECONDS", str(5 * 3600 + 15 * 60)))  # 5h 15m
+MAX_RUNTIME_SECONDS = int(os.environ.get("MAX_RUNTIME_SECONDS", str(5 * 3600 + 15 * 60)))
 
-# Regex matching <anime_id>_<language>_<quality>_<episode_number>
 FILENAME_PATTERN = re.compile(
     r'^(?P<anime_id>.+?)_(?P<lang>[a-zA-Z]{2,4})_(?P<quality>\d+p|4k|2160p|360p)_(?P<ep>\d+(?:\.\d+)?)$'
 )
@@ -61,11 +56,12 @@ def validate_environment():
     if not TELEGRAM_API_ID: missing.append("TELEGRAM_API_ID")
     if not TELEGRAM_API_HASH: missing.append("TELEGRAM_API_HASH")
     if not TELEGRAM_BOT_TOKEN and not TELEGRAM_STRING_SESSION:
-        missing.append("TELEGRAM_BOT_TOKEN (or TELEGRAM_STRING_SESSION)")
+        missing.append("TELEGRAM_STRING_SESSION_3 (or TELEGRAM_STRING_SESSION / TELEGRAM_BOT_TOKEN)")
     if not TELEGRAM_CHANNEL_ID: missing.append("TELEGRAM_CHANNEL_IA_SOURCE")
     if not IA_ACCESS_KEY: missing.append("IA_ACCESS_KEY")
     if not IA_SECRET_KEY: missing.append("IA_SECRET_KEY")
     if not IA_ITEM_IDENTIFIER: missing.append("IA_ITEM_IDENTIFIER")
+    if not FILESTREAM_BASE_URL: missing.append("FILESTREAM_BASE_URL")
 
     if missing:
         logger.critical(f"Missing required environment variables: {', '.join(missing)}")
@@ -73,7 +69,6 @@ def validate_environment():
 
 
 def parse_filename_metadata(filename: str) -> dict:
-    """Parses <anime_id>_<language>_<quality>_<episode_number> format."""
     base_name = filename.rsplit('.', 1)[0]
     m = FILENAME_PATTERN.match(base_name)
     if m:
@@ -93,7 +88,6 @@ def parse_filename_metadata(filename: str) -> dict:
 
 
 def compute_filestream_hash(file_name: str, file_size: int, mime_type: str, file_id: int) -> str:
-    """Computes exact MD5 short hash used by EverythingSuckz/TG-FileStreamBot."""
     raw = (
         file_name.encode('utf-8') +
         str(file_size).encode('utf-8') +
@@ -104,18 +98,14 @@ def compute_filestream_hash(file_name: str, file_size: int, mime_type: str, file
 
 
 def fetch_existing_ia_files(item_id: str) -> set:
-    """Fetches list of existing files from Internet Archive metadata API."""
     url = f"https://archive.org/metadata/{item_id}/files"
-    logger.info(f"Checking existing files in Internet Archive item '{item_id}'...")
     try:
         resp = requests.get(url, timeout=30)
         if resp.status_code == 200:
             files_data = resp.json().get("result", [])
-            existing = {str(f.get("name", "")).strip().lower() for f in files_data}
-            logger.info(f"Loaded {len(existing)} existing files from Internet Archive.")
-            return existing
+            return {str(f.get("name", "")).strip().lower() for f in files_data}
     except Exception as e:
-        logger.warning(f"Could not fetch IA metadata: {e}. Fallback to empty set.")
+        logger.warning(f"Could not fetch IA metadata: {e}")
     return set()
 
 
@@ -125,7 +115,6 @@ def upload_to_ia(file_path: Path, message_id: int) -> bool:
         "collection": "opensource_movies",
         "original_message_id": str(message_id)
     }
-    logger.info(f"Uploading {file_path.name} to Internet Archive item '{IA_ITEM_IDENTIFIER}'...")
     try:
         r = ia.upload(
             identifier=IA_ITEM_IDENTIFIER,
@@ -147,16 +136,12 @@ async def run_sync_loop(single_video: bool = False):
     DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
     start_time = time.time()
 
-    # Initialize PocketBase
     pb = PocketBaseClient(base_url=POCKETBASE_URL)
     pb.ensure_collection()
     completed_ids = pb.get_completed_message_ids()
-    logger.info(f"Loaded {len(completed_ids)} completed message IDs from PocketBase.")
 
-    # Initialize IA existing files set (pre-check protection)
     ia_existing_files = fetch_existing_ia_files(IA_ITEM_IDENTIFIER)
 
-    # Initialize Telegram
     try:
         channel_id = int(TELEGRAM_CHANNEL_ID)
     except ValueError:
@@ -175,12 +160,9 @@ async def run_sync_loop(single_video: bool = False):
     video_synced_in_this_run = False
     more_videos_exist = False
 
-    logger.info("--- Scanning Log Channel for media ---")
-
     async for message in client.iter_messages(target_channel, reverse=True):
-        # 6-Hour limit check
         if time.time() - start_time > MAX_RUNTIME_SECONDS:
-            logger.info("Approaching 6-hour execution limit. Gracefully breaking batch to chain next run.")
+            logger.info("Approaching execution limit. Gracefully breaking batch.")
             more_videos_exist = True
             break
 
@@ -195,7 +177,6 @@ async def run_sync_loop(single_video: bool = False):
         if not doc:
             continue
 
-        # Extract filename
         filename = ""
         for attr in doc.attributes:
             if isinstance(attr, DocumentAttributeFilename):
@@ -205,26 +186,20 @@ async def run_sync_loop(single_video: bool = False):
         if not filename:
             filename = f"video_{message.id}.mp4"
 
-        # Parse filename schema: <anime_id>_<language>_<quality>_<episode_number>
         meta = parse_filename_metadata(filename)
-
-        # Compute stream link using FileStreamBot algorithm
         short_hash = compute_filestream_hash(filename, doc.size, doc.mime_type or "video/mp4", doc.id)
-        stream_link = f"{FILESTREAM_BASE_URL.rstrip('/')}/stream/{message.id}?hash={short_hash}"
+        stream_link = f"{FILESTREAM_BASE_URL}/stream/{message.id}?hash={short_hash}"
 
-        # Extract Telegram thumbnail if available
         thumbnail_id = ""
         if hasattr(doc, "thumbs") and doc.thumbs:
             thumbnail_id = getattr(doc.thumbs[0], "file_id", "") or f"thumb_{message.id}"
 
-        # MP4 Rule: Only .mp4 is uploaded to Internet Archive
         is_mp4 = filename.lower().endswith(".mp4") or (doc.mime_type or "").lower() == "video/mp4"
         ia_synced = False
 
         if is_mp4:
-            # Pre-check: Does file already exist in Internet Archive item?
             if filename.lower() in ia_existing_files:
-                logger.info(f"File '{filename}' already exists in Internet Archive item '{IA_ITEM_IDENTIFIER}'. Skipping upload.")
+                logger.info(f"File '{filename}' already exists on Internet Archive. Skipping upload.")
                 ia_synced = True
             else:
                 logger.info(f"Downloading MP4 video for Msg {message.id} ({filename})...")
@@ -239,9 +214,8 @@ async def run_sync_loop(single_video: bool = False):
                     if dl_path.exists():
                         dl_path.unlink()
         else:
-            logger.info(f"File '{filename}' is non-MP4. Skipping Internet Archive upload, recording in PocketBase.")
+            logger.info(f"File '{filename}' is non-MP4. Recording in PocketBase only.")
 
-        # Always record in PocketBase
         pb.record_completed_sync({
             "message_id": msg_id_str,
             "file_name": filename,
@@ -271,11 +245,10 @@ async def run_sync_loop(single_video: bool = False):
         print("RESULT_HAS_MORE_VIDEOS=true")
     else:
         print("RESULT_HAS_MORE_VIDEOS=false")
-        logger.info("All messages in channel are fully processed and synced!")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Telegram to Internet Archive & PocketBase Worker")
+    parser = argparse.ArgumentParser(description="Telegram to Internet Archive Worker")
     parser.add_argument("--single-video", action="store_true", help="Process 1 video and exit")
     args = parser.parse_args()
 

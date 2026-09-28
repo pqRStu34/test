@@ -5,11 +5,11 @@ import argparse
 import logging
 import subprocess
 import shutil
+from typing import Optional
 from pathlib import Path
 from dotenv import load_dotenv
 from telethon import TelegramClient
 from telethon.sessions import StringSession
-from telethon.errors import AuthKeyDuplicatedError
 from convex import ConvexClient
 
 load_dotenv()
@@ -24,8 +24,8 @@ logger = logging.getLogger("subsplease_uploader")
 CONVEX_URL = os.environ.get("CONVEX_URL", "").strip()
 TELEGRAM_API_ID = os.environ.get("TELEGRAM_API_ID", "").strip()
 TELEGRAM_API_HASH = os.environ.get("TELEGRAM_API_HASH", "").strip()
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-TELEGRAM_STRING_SESSION = os.environ.get("TELEGRAM_STRING_SESSION", "").strip()
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_PIPELINE_BOT_TOKEN", "").strip() or os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_STRING_SESSION = os.environ.get("TELEGRAM_STRING_SESSION_1", "").strip() or os.environ.get("TELEGRAM_STRING_SESSION", "").strip()
 TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_SUBSPLEASE", "").strip()
 
 DOWNLOAD_DIR = Path(os.environ.get("DOWNLOAD_DIR", "./downloads_sp"))
@@ -38,7 +38,7 @@ def validate_environment():
     if not TELEGRAM_API_ID: missing.append("TELEGRAM_API_ID")
     if not TELEGRAM_API_HASH: missing.append("TELEGRAM_API_HASH")
     if not TELEGRAM_BOT_TOKEN and not TELEGRAM_STRING_SESSION:
-        missing.append("TELEGRAM_BOT_TOKEN (or TELEGRAM_STRING_SESSION)")
+        missing.append("TELEGRAM_PIPELINE_BOT_TOKEN (or TELEGRAM_STRING_SESSION_1)")
     if not TELEGRAM_CHANNEL_ID: missing.append("TELEGRAM_CHANNEL_SUBSPLEASE")
 
     if missing:
@@ -57,7 +57,6 @@ def format_bytes(size_bytes: int) -> str:
 
 
 def download_with_aria2(magnet_or_url: str, output_dir: Path, timeout_seconds: int = 1200) -> Optional[Path]:
-    """Downloads torrent/magnet or direct URL using aria2c."""
     output_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
         "aria2c",
@@ -70,7 +69,7 @@ def download_with_aria2(magnet_or_url: str, output_dir: Path, timeout_seconds: i
         "--dir", str(output_dir),
         magnet_or_url
     ]
-    logger.info(f"Starting download via aria2c...")
+    logger.info("Starting download via aria2c...")
     try:
         proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=timeout_seconds)
         if proc.returncode != 0:
@@ -83,11 +82,9 @@ def download_with_aria2(magnet_or_url: str, output_dir: Path, timeout_seconds: i
         logger.error(f"Failed to execute aria2c: {e}")
         return None
 
-    # Locate downloaded video file
     video_extensions = {".mp4", ".mkv", ".webm", ".avi"}
     candidates = [f for f in output_dir.glob("**/*") if f.is_file() and f.suffix.lower() in video_extensions]
     if candidates:
-        # Pick largest file in case of sample videos
         candidates.sort(key=lambda x: x.stat().st_size, reverse=True)
         return candidates[0]
 
@@ -108,7 +105,6 @@ async def run_uploader(single_video: bool = False):
 
     logger.info(f"Found {len(pending)} pending SubsPlease releases.")
 
-    # Initialize Telethon Client
     try:
         channel_id = int(TELEGRAM_CHANNEL_ID)
     except ValueError:
@@ -135,9 +131,8 @@ async def run_uploader(single_video: bool = False):
 
         logger.info(f"Processing: {title} | Size: {format_bytes(file_size)}")
 
-        # Condition 1: File size above 2 GB limit -> Send formatted text message
         if file_size > TWO_GB_BYTES:
-            logger.info(f"File size exceeds 2GB limit ({format_bytes(file_size)}). Sending formatted text link...")
+            logger.info(f"File size exceeds 2GB limit ({format_bytes(file_size)}). Sending text message...")
             caption = (
                 f"🎬 **{title}**\n\n"
                 f"📁 **Category**: {category or 'Anime'}\n"
@@ -158,12 +153,11 @@ async def run_uploader(single_video: bool = False):
                 break
             continue
 
-        # Condition 2: File size <= 2 GB -> Download with aria2c and upload file
         item_dl_dir = DOWNLOAD_DIR / str(int(time.time()))
         downloaded_file = download_with_aria2(link, item_dl_dir)
 
         if not downloaded_file:
-            logger.error(f"Download failed for {title}. Falling back to text message with link...")
+            logger.error(f"Download failed for {title}. Falling back to text message...")
             caption = (
                 f"🎬 **{title}**\n\n"
                 f"📁 **Category**: {category or 'Anime'}\n"
@@ -184,10 +178,9 @@ async def run_uploader(single_video: bool = False):
                 break
             continue
 
-        # Verify downloaded size
         actual_size = downloaded_file.stat().st_size
         if actual_size > TWO_GB_BYTES:
-            logger.info(f"Downloaded file actually exceeds 2GB ({format_bytes(actual_size)}). Sending text link.")
+            logger.info(f"Downloaded file exceeds 2GB ({format_bytes(actual_size)}). Sending text message.")
             caption = (
                 f"🎬 **{title}**\n\n"
                 f"📁 **Category**: {category or 'Anime'}\n"
@@ -208,7 +201,6 @@ async def run_uploader(single_video: bool = False):
                 break
             continue
 
-        # Upload file to Telegram
         logger.info(f"Uploading {downloaded_file.name} ({format_bytes(actual_size)}) to Telegram...")
         caption = f"🎬 **{title}**\n💾 Size: {format_bytes(actual_size)}"
 

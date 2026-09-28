@@ -17,15 +17,15 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install System Utilities (aria2)
+      - name: Install System Utilities
         run: |
           sudo apt-get update -y
           sudo apt-get install -y aria2
@@ -41,7 +41,8 @@ jobs:
           CONVEX_URL: ${{ secrets.CONVEX_URL }}
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_PIPELINE_BOT_TOKEN: ${{ secrets.TELEGRAM_PIPELINE_BOT_TOKEN || secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_STRING_SESSION_1: ${{ secrets.TELEGRAM_STRING_SESSION_1 || secrets.TELEGRAM_STRING_SESSION }}
           TELEGRAM_CHANNEL_SUBSPLEASE: ${{ secrets.TELEGRAM_CHANNEL_SUBSPLEASE }}
         run: |
           python workers/subsplease_uploader.py --single-video | tee upload_output.log
@@ -56,6 +57,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Workload saved to Convex. Dispatching next release in 30 seconds..."
           sleep 30
           gh workflow run subsplease_upload.yml

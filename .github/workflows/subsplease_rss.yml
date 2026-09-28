@@ -2,7 +2,7 @@ name: SubsPlease RSS Ingestion (Convex)
 
 on:
   schedule:
-    - cron: '0 * * * *' # Every 1 hour
+    - cron: '0 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -15,10 +15,10 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -42,5 +42,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Found ${{ steps.rss_step.outputs.new_releases }} new releases. Triggering uploader..."
           gh workflow run subsplease_upload.yml

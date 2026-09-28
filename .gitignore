@@ -1,4 +1,3 @@
-# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -7,19 +6,13 @@ __pycache__/
 env/
 venv/
 .venv/
-
-# Environment Variables
 .env
 *.env
-
-# Local Storage & Downloads
 downloads/
 pb_data/
 pocketbase.exe
 pb.zip
 run_output.log
-
-# Node & Convex
 node_modules/
 .convex/
 npm-debug.log*

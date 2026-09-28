@@ -6,6 +6,7 @@ import logging
 import subprocess
 import shutil
 import requests
+from typing import Optional
 from pathlib import Path
 from dotenv import load_dotenv
 from telethon import TelegramClient
@@ -24,8 +25,8 @@ logger = logging.getLogger("tsukihime_sync")
 CONVEX_URL = os.environ.get("CONVEX_URL", "").strip()
 TELEGRAM_API_ID = os.environ.get("TELEGRAM_API_ID", "").strip()
 TELEGRAM_API_HASH = os.environ.get("TELEGRAM_API_HASH", "").strip()
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-TELEGRAM_STRING_SESSION = os.environ.get("TELEGRAM_STRING_SESSION", "").strip()
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_PIPELINE_BOT_TOKEN", "").strip() or os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_STRING_SESSION = os.environ.get("TELEGRAM_STRING_SESSION_2", "").strip() or os.environ.get("TELEGRAM_STRING_SESSION", "").strip()
 TELEGRAM_CHANNEL_ID = os.environ.get("TELEGRAM_CHANNEL_TSUKIHIME", "").strip()
 
 TSUKIHIME_GROUP_ID = os.environ.get("TSUKIHIME_GROUP_ID", "12")
@@ -41,7 +42,7 @@ def validate_environment():
     if not TELEGRAM_API_ID: missing.append("TELEGRAM_API_ID")
     if not TELEGRAM_API_HASH: missing.append("TELEGRAM_API_HASH")
     if not TELEGRAM_BOT_TOKEN and not TELEGRAM_STRING_SESSION:
-        missing.append("TELEGRAM_BOT_TOKEN (or TELEGRAM_STRING_SESSION)")
+        missing.append("TELEGRAM_PIPELINE_BOT_TOKEN (or TELEGRAM_STRING_SESSION_2)")
     if not TELEGRAM_CHANNEL_ID: missing.append("TELEGRAM_CHANNEL_TSUKIHIME")
 
     if missing:
@@ -58,9 +59,8 @@ def format_bytes(size_bytes: int) -> str:
 
 
 def fetch_tsukihime_releases(limit: int = 50) -> list:
-    """Fetches newest releases for Tsukihime group."""
     url = f"{TSUKIHIME_API_BASE}/groups/{TSUKIHIME_GROUP_ID}?limit={limit}"
-    logger.info(f"Fetching Tsukihime group {TSUKIHIME_GROUP_ID} releases from {url}...")
+    logger.info(f"Fetching Tsukihime group {TSUKIHIME_GROUP_ID} releases...")
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
         resp = requests.get(url, headers=headers, timeout=20)
@@ -98,6 +98,8 @@ def download_with_aria2(url_or_magnet: str, output_dir: Path, timeout: int = 120
         "--seed-time=0",
         "--max-connection-per-server=16",
         "--split=16",
+        "--summary-interval=10",
+        "--auto-file-renaming=false",
         "--allow-overwrite=true",
         "--dir", str(output_dir),
         url_or_magnet
@@ -123,20 +125,17 @@ async def run_sync(single_video: bool = False):
 
     convex_client = ConvexClient(CONVEX_URL)
 
-    # 1. Fetch new Tsukihime releases and record into Convex
     releases = fetch_tsukihime_releases(limit=50)
     if releases:
         new_count = convex_client.mutation("tsukihime:addReleases", {"releases": releases})
         logger.info(f"Ingested {new_count} new Tsukihime releases into Convex.")
 
-    # 2. Get pending releases to upload
     pending = convex_client.query("tsukihime:getPendingReleases", {"limit": 50})
     if not pending:
         logger.info("No pending Tsukihime releases to upload.")
         print("RESULT_HAS_MORE_VIDEOS=false")
         return
 
-    # 3. Connect to Telegram
     try:
         channel_id = int(TELEGRAM_CHANNEL_ID)
     except ValueError:
@@ -161,7 +160,6 @@ async def run_sync(single_video: bool = False):
         file_size = item.get("fileSize") or 0
         seeders = item.get("seeders") or 0
 
-        # Skip low seeders if configured
         if seeders and seeders < MIN_SEEDERS:
             logger.info(f"Skipping {title}: seeders {seeders} < {MIN_SEEDERS}")
             convex_client.mutation("tsukihime:updateUploadStatus", {
@@ -170,7 +168,6 @@ async def run_sync(single_video: bool = False):
             })
             continue
 
-        # Condition 1: > 2GB -> text message
         if file_size > TWO_GB_BYTES:
             logger.info(f"File size {format_bytes(file_size)} exceeds 2GB. Sending text link...")
             caption = (
@@ -191,7 +188,6 @@ async def run_sync(single_video: bool = False):
                 break
             continue
 
-        # Condition 2: <= 2GB -> download and upload
         item_dir = DOWNLOAD_DIR / str(int(time.time()))
         downloaded = download_with_aria2(link, item_dir)
 

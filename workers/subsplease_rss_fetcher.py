@@ -22,8 +22,6 @@ CONVEX_URL = os.environ.get("CONVEX_URL", "").strip()
 
 
 def parse_size_in_bytes(size_str: str, link: str) -> int:
-    """Parses byte size from magnet 'xl' parameter or size string (e.g. 1.34 GiB)."""
-    # 1. Try magnet link parameter &xl=
     xl_match = re.search(r"[?&]xl=(\d+)", link)
     if xl_match:
         try:
@@ -31,7 +29,6 @@ def parse_size_in_bytes(size_str: str, link: str) -> int:
         except ValueError:
             pass
 
-    # 2. Try parsing text size string (e.g. 1.34 GiB, 950 MiB)
     if not size_str:
         return 0
 
@@ -53,7 +50,6 @@ def parse_size_in_bytes(size_str: str, link: str) -> int:
 
 
 def fetch_rss_feed() -> list:
-    """Fetches SubsPlease RSS feed with strict cache busting."""
     timestamp = int(time.time())
     url = f"{RSS_URL}&_cb={timestamp}"
     headers = {
@@ -67,7 +63,6 @@ def fetch_rss_feed() -> list:
     resp = requests.get(url, headers=headers, timeout=30)
     resp.raise_for_status()
 
-    # Parse XML
     root = ET.fromstring(resp.content)
     channel = root.find("channel")
     if channel is None:
@@ -75,7 +70,6 @@ def fetch_rss_feed() -> list:
         return []
 
     items = []
-    # Namespaces
     ns = {"subsplease": "https://subsplease.org/rss"}
 
     for item in channel.findall("item"):

@@ -7,7 +7,7 @@ export default defineSchema({
     category: v.string(),
     link: v.string(),
     fileSize: v.optional(v.number()),
-    status: v.string(), // "pending", "uploaded_file", "uploaded_text", "failed"
+    status: v.string(),
     telegramMessageId: v.optional(v.string()),
     telegramFileUniqueId: v.optional(v.string()),
     addedTime: v.string(),
@@ -20,7 +20,7 @@ export default defineSchema({
     category: v.string(),
     link: v.string(),
     fileSize: v.optional(v.number()),
-    status: v.string(), // "pending", "uploaded_file", "uploaded_text", "skipped", "failed"
+    status: v.string(),
     telegramMessageId: v.optional(v.string()),
     telegramFileUniqueId: v.optional(v.string()),
     addedTime: v.string(),
