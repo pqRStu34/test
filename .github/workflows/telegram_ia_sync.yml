@@ -2,6 +2,8 @@ name: Telegram to Internet Archive Sync (PocketBase)
 
 on:
   workflow_dispatch:
+  repository_dispatch:
+    types: [new_file_detected, ping]
 
 concurrency:
   group: telegram-ia-sync
@@ -108,11 +110,3 @@ jobs:
             git diff --staged --quiet || (git commit -m "auto: persist encrypted pocketbase database [skip ci]" && git push origin pocketbase-data --force)
             git checkout main
           fi
-
-      - name: Auto-Trigger Next Workload
-        if: steps.sync_step.outputs.has_more == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          sleep 30
-          gh workflow run telegram_ia_sync.yml

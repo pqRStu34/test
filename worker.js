@@ -405,7 +405,8 @@ function getMainMenuKeyboard() {
       [{ text: '➕ Add Anime', callback_data: 'menu:add' }],
       [{ text: '✏️ Edit Anime', callback_data: 'menu:edit' }],
       [{ text: '🗑️ Delete Anime', callback_data: 'menu:delete' }],
-      [{ text: '📦 Generate JSON & Supabase Sync', callback_data: 'menu:json' }]
+      [{ text: '📦 Generate JSON & Supabase Sync', callback_data: 'menu:json' }],
+      [{ text: '⚡ Ping IA Sync Workflow', callback_data: 'menu:ping_ia' }]
     ]
   };
 }
@@ -536,6 +537,8 @@ export default {
           await handleCallbackQuery(update.callback_query, env);
         } else if (update.message) {
           await handleMessage(update.message, env);
+        } else if (update.channel_post) {
+          await handleChannelPost(update.channel_post, env);
         }
       } catch (err) {
         console.error('Update processing error:', err);
@@ -570,6 +573,16 @@ async function handleMessage(message, env) {
     await clearSession(fromId, env.DB);
     const welcome = `👋 <b>Anime Archive D1 Manager</b>\n\nManage your anime catalog with choices and typing where required.\n\nChoose an option:`;
     return sendMessage(chatId, welcome, { reply_markup: getMainMenuKeyboard() }, env);
+  }
+
+  if (text === '/ping' || text === '/sync_ia') {
+    await sendMessage(chatId, '⏳ Pinging GitHub Actions to run Telegram to Internet Archive sync...', {}, env);
+    const ok = await pingGitHubWorkflow(env, 'ping');
+    if (ok) {
+      return sendMessage(chatId, '✅ <b>Sync Triggered!</b>\n\nGitHub Actions workflow <code>telegram_ia_sync.yml</code> has been dispatched.', { reply_markup: getMainMenuKeyboard() }, env);
+    } else {
+      return sendMessage(chatId, '⚠️ <b>Failed to Trigger!</b>\n\nPlease ensure your GitHub Personal Access Token is saved as <code>GH_PAT</code> in your Cloudflare Worker secrets.', { reply_markup: getMainMenuKeyboard() }, env);
+    }
   }
 
   if (text === '/add' || text.startsWith('/add ')) {
@@ -759,6 +772,23 @@ async function handleCallbackQuery(cb, env) {
     return editMessage(chatId, messageId, '📦 <b>Generate Episode JSON</b>\n\nPlease type the <b>Anime ID</b> (e.g. <code>40969</code> or <code>63140</code>):', {
       reply_markup: { inline_keyboard: [[{ text: '❌ Cancel', callback_data: 'nav:menu' }]] }
     }, env);
+  }
+
+  if (dataStr === 'menu:ping_ia') {
+    await answerCallbackQuery(query.id, 'Pinging GitHub Actions...', false, env);
+    await editMessage(chatId, messageId, '⏳ <b>Pinging GitHub Actions...</b>\n\nDispatching <code>telegram_ia_sync.yml</code>...', {
+      reply_markup: { inline_keyboard: [[{ text: '🔙 Main Menu', callback_data: 'nav:menu' }]] }
+    }, env);
+    const ok = await pingGitHubWorkflow(env, 'ping');
+    if (ok) {
+      return editMessage(chatId, messageId, '✅ <b>Telegram to IA Sync Started!</b>\n\nWorkflow <code>telegram_ia_sync.yml</code> was successfully triggered on GitHub.', {
+        reply_markup: { inline_keyboard: [[{ text: '🔙 Main Menu', callback_data: 'nav:menu' }]] }
+      }, env);
+    } else {
+      return editMessage(chatId, messageId, '⚠️ <b>Failed to Trigger Workflow</b>\n\nPlease ensure <code>GH_PAT</code> (GitHub Personal Access Token) is set in your Cloudflare Worker secrets.', {
+        reply_markup: { inline_keyboard: [[{ text: '🔙 Main Menu', callback_data: 'nav:menu' }]] }
+      }, env);
+    }
   }
 
   // Step-by-Step Review: Keep field value as-is
@@ -1387,5 +1417,72 @@ async function handleJsonGeneration(chatId, animeId, env) {
     return editMessage(chatId, statusMsg.result.message_id, `❌ Error generating JSON: ${escapeHtml(err.message)}`, {
       reply_markup: { inline_keyboard: [[{ text: '🏠 Main Menu', callback_data: 'nav:menu' }]] }
     }, env);
+  }
+}
+
+// ==========================================
+// CHANNEL POST LISTENER & GITHUB DISPATCHER
+// ==========================================
+async function handleChannelPost(post, env) {
+  // Check if post contains a video, document, or animation
+  const hasFile = Boolean(post.video || post.document || post.animation);
+  if (!hasFile) return;
+
+  const targetChannel = env.TELEGRAM_CHANNEL_IA_SOURCE || '';
+  if (targetChannel && String(post.chat.id) !== String(targetChannel)) {
+    return;
+  }
+
+  console.log(`[i] New file detected in channel ${post.chat.id} (message_id: ${post.message_id}). Pinging GitHub Actions IA sync...`);
+  await pingGitHubWorkflow(env, 'new_file_detected');
+}
+
+async function pingGitHubWorkflow(env, eventType = 'new_file_detected') {
+  const token = env.GH_PAT || env.GITHUB_TOKEN;
+  const repo = env.GH_REPO || 'pqRStu34/test';
+  if (!token) {
+    console.warn('[!] GH_PAT / GITHUB_TOKEN not configured in worker secrets.');
+    return false;
+  }
+
+  // 1. Try workflow_dispatch first
+  try {
+    const wfRes = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/telegram_ia_sync.yml/dispatches`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'User-Agent': 'Cloudflare-Worker-Bot',
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ ref: 'main' })
+    });
+    if (wfRes.status === 204 || wfRes.status === 200) {
+      console.log('[v] Successfully dispatched telegram_ia_sync.yml via workflow_dispatch');
+      return true;
+    }
+  } catch (e) {
+    console.error('[!] Workflow dispatch error:', e);
+  }
+
+  // 2. Fallback to repository_dispatch
+  try {
+    const rdRes = await fetch(`https://api.github.com/repos/${repo}/dispatches`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'User-Agent': 'Cloudflare-Worker-Bot',
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        event_type: eventType,
+        client_payload: { timestamp: new Date().toISOString() }
+      })
+    });
+    return rdRes.status === 204 || rdRes.status === 200;
+  } catch (e) {
+    console.error('[!] Repository dispatch error:', e);
+    return false;
   }
 }
